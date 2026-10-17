@@ -34,6 +34,10 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
   const [execution, setExecution] = useState<"paper" | "okx">("paper");
   // step 3
   const [onFuji, setOnFuji] = useState(true);
+  // model connection test
+  type TestResult = { role: string; model: string; ok: boolean; ms: number; probabilities: Record<string, number> | null; choice: string | null; error: string | null };
+  const [testing, setTesting] = useState(false);
+  const [test, setTest] = useState<{ ok: boolean; results: TestResult[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -47,6 +51,8 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
     fetch("/api/chain").then((r) => r.json()).then(setChain).catch(() => null);
   }, []);
 
+  useEffect(() => setTest(null), [source, model, orModel, orKey]);
+
   const local = options.filter((o) => o.value.startsWith("ollama:"));
   const openrouter = options.filter((o) => o.value.startsWith("openrouter:"));
   const primary = source === "local" ? model : orModel;
@@ -58,6 +64,26 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
   const lowUsdc = chain?.configured && (chain.usdc ?? 0) < 0.2;
 
   const mandate = useMemo(() => ({ allowed, maxTradeUsdt, maxDailyTrades, maxDrawdownPct, minGate }), [allowed, maxTradeUsdt, maxDailyTrades, maxDrawdownPct, minGate]);
+
+  /** Step 1 → 2: send one real decision to the selected model(s); continue only if they answer. */
+  const testAndContinue = async () => {
+    setTesting(true);
+    setTest(null);
+    try {
+      const r = await fetch("/api/models/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: primary, validator: source === "local" ? validator : undefined, openrouterKey: source === "openrouter" ? orKey : undefined }),
+      });
+      const j = await r.json();
+      setTest(j);
+      if (j.ok) setTimeout(() => setStep(1), 1200);
+    } catch (e) {
+      setTest({ ok: false, results: [{ role: "Bağlantı", model: primary, ok: false, ms: 0, probabilities: null, choice: null, error: (e as Error).message }] });
+    } finally {
+      setTesting(false);
+    }
+  };
 
   const launch = async () => {
     setBusy(true);
@@ -172,8 +198,35 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
                   </div>
                 )}
                 <p className="rounded-btn bg-ink/[0.04] px-3 py-2 font-mono text-xs text-ink/70">
-                  Ana model: <b className="text-ink">{primary.replace(/^(ollama|openrouter):/, "") || "-"}</b> · İkinci görüş: <b className="text-ink">{validator.replace(/^ollama:/, "")}</b>
+                  Ana model: <b className="text-ink">{primary.replace(/^(ollama|openrouter):/, "") || "-"}</b>
+                  {source === "local" && (
+                    <>
+                      {" "}· İkinci görüş: <b className="text-ink">{validator.replace(/^ollama:/, "")}</b>
+                    </>
+                  )}
                 </p>
+                {(testing || test) && (
+                  <div className="space-y-1.5 rounded-btn border border-ink/15 p-3">
+                    <div className="text-xs font-bold uppercase tracking-wider text-muted">
+                      {testing ? "Test kararı gönderiliyor..." : test?.ok ? "Bağlantı testi geçti" : "Bağlantı testi başarısız"}
+                    </div>
+                    {testing && <div className="h-1.5 overflow-hidden rounded-full bg-ink/10"><div className="h-full w-1/3 animate-pulse rounded-full bg-sun" /></div>}
+                    {test?.results.map((r) => (
+                      <div key={r.role} className="grid grid-cols-[18px_1fr_auto] items-center gap-2 font-mono text-xs">
+                        <span className={r.ok ? "text-long" : "text-short"}>{r.ok ? "✓" : "✕"}</span>
+                        <span className="min-w-0 truncate">
+                          <b>{r.role}</b> · {r.model}
+                          {r.ok && r.probabilities ? (
+                            <span className="text-muted"> · AL {Math.round((r.probabilities.long ?? 0) * 100)}% · BEKLE {Math.round((r.probabilities.flat ?? 0) * 100)}%</span>
+                          ) : (
+                            <span className="text-short"> · {r.error}</span>
+                          )}
+                        </span>
+                        <span className="text-muted">{r.ms} ms</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -286,8 +339,12 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
           )}
           {err && <span className="text-sm text-short">{err}</span>}
           {step < 2 ? (
-            <button onClick={() => setStep((s) => s + 1)} disabled={!canNext} className="ml-auto min-h-[44px] rounded-btn bg-ink px-5 text-sm font-bold text-paper transition-transform hover:-translate-y-px disabled:opacity-40">
-              Devam →
+            <button
+              onClick={() => (step === 0 ? testAndContinue() : setStep((s) => s + 1))}
+              disabled={!canNext || testing}
+              className="ml-auto min-h-[44px] rounded-btn bg-ink px-5 text-sm font-bold text-paper transition-transform hover:-translate-y-px disabled:opacity-40"
+            >
+              {step === 0 ? (testing ? "Test ediliyor..." : test && !test.ok ? "Tekrar test et →" : "Test et ve devam →") : "Devam →"}
             </button>
           ) : (
             <button onClick={launch} disabled={busy} className="ml-auto min-h-[44px] rounded-btn border border-ink/10 bg-sun px-5 font-bold shadow-btn transition-transform hover:-translate-y-px disabled:opacity-60">
