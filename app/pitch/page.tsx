@@ -1,0 +1,243 @@
+"use client";
+
+import Link from "next/link";
+import { motion } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import { LlmVsJev } from "@/components/agent/LlmVsJev";
+
+const EASE = [0.22, 1, 0.36, 1] as const;
+const reveal = {
+  initial: { opacity: 0, y: 24 },
+  whileInView: { opacity: 1, y: 0 },
+  viewport: { once: true, amount: 0.4 },
+  transition: { duration: 0.7, ease: EASE },
+};
+
+const DECISIONS = [
+  { q: "Hangi parite?", type: "choice", out: "N pariteye dağılım", ex: "SOL 34% · ETH 18% · AVAX 14%" },
+  { q: "Hangi yön?", type: "choice", out: "long / short / flat", ex: "L 66% · F 23% · S 11%" },
+  { q: "Ne kadar?", type: "score", out: "5 seviyeli ölçek", ex: "Medium (2.4 / 4)" },
+  { q: "Kaç kaldıraç?", type: "score", out: "1x · 2x · 3x · 5x", ex: "3x (55%)" },
+  { q: "TP / SL nerede?", type: "choice", out: "ATR katlarına dağılım", ex: "TP 2 ATR · SL 1 ATR" },
+  { q: "İşleme girilsin mi?", type: "noul", out: "p(EV > 0)", ex: "0.71 → EXECUTE" },
+];
+
+const FLOW = [
+  { k: "OKX ATK", d: "market_get_tickers · candles · funding", c: "bg-paper" },
+  { k: "Özellikler", d: "trend · RSI · ATR · hacim z · funding", c: "bg-paper" },
+  { k: "JEV ∥ LAYA", d: "paralel worker, pair başına 2 forward pass", c: "bg-sun" },
+  { k: "Ensemble", d: "0.6 JEV + 0.4 LAYA", c: "bg-paper" },
+  { k: "Risk kapısı", d: "noul ≥ 0.55 ve iki model hemfikir", c: "bg-paper" },
+  { k: "OKX ATK", d: "swap_place_order + ekli TP/SL", c: "bg-ink text-paper" },
+];
+
+export default function PitchPage() {
+  const root = useRef<HTMLDivElement>(null);
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => {
+    const slides = () => Array.from(root.current?.querySelectorAll<HTMLElement>("[data-slide]") ?? []);
+    const io = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting && setIdx(slides().indexOf(e.target as HTMLElement))), { threshold: 0.55 });
+    slides().forEach((s) => io.observe(s));
+    const onKey = (e: KeyboardEvent) => {
+      const list = slides();
+      const cur = list.findIndex((s) => Math.abs(s.getBoundingClientRect().top) < window.innerHeight / 2);
+      if (["ArrowDown", "ArrowRight", "PageDown", " "].includes(e.key)) {
+        e.preventDefault();
+        list[Math.min(list.length - 1, cur + 1)]?.scrollIntoView({ behavior: "smooth" });
+      }
+      if (["ArrowUp", "ArrowLeft", "PageUp"].includes(e.key)) {
+        e.preventDefault();
+        list[Math.max(0, cur - 1)]?.scrollIntoView({ behavior: "smooth" });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      io.disconnect();
+      window.removeEventListener("keydown", onKey);
+    };
+  }, []);
+
+  const slide = "relative flex min-h-[calc(100vh-64px)] snap-start items-center border-b border-ink/10 px-4 py-16 sm:px-8";
+  const wrap = "mx-auto w-full max-w-[1100px]";
+  const kicker = "font-mono text-xs font-bold uppercase tracking-[0.2em] text-muted";
+  const h2 = "mt-3 font-display text-5xl uppercase leading-[0.95] sm:text-7xl";
+
+  return (
+    <div ref={root} className="h-[calc(100vh-64px)] snap-y snap-mandatory overflow-y-auto">
+      <div className="pointer-events-none fixed bottom-4 right-4 z-30 rounded-full border border-ink/15 bg-paper px-3 py-1 font-mono text-xs shadow-btn">
+        {String(idx + 1).padStart(2, "0")} / 08
+      </div>
+
+      {/* 1 · title */}
+      <section data-slide className={`${slide} paper-grid`}>
+        <div className={`${wrap} text-center`}>
+          <motion.span {...reveal} className="inline-flex items-center gap-2 rounded-full border border-ink/15 bg-paper px-3 py-1.5 text-xs font-bold shadow-btn">
+            <span className="h-2 w-2 rounded-full bg-sun" /> Team1 Agentic Hackathon · Ankara · 17 Ekim 2026
+          </motion.span>
+          <motion.h1 {...reveal} className="mt-6 font-display text-[64px] uppercase leading-[0.9] sm:text-[120px]">
+            Tahmin eden
+            <br />
+            <span className="relative inline-block">
+              <span className="relative z-10">agent.</span>
+              <span className="absolute inset-x-[-8px] bottom-2 z-0 h-[36%] bg-sun" />
+            </span>
+          </motion.h1>
+          <motion.p {...reveal} className="mx-auto mt-6 max-w-[640px] text-xl font-medium text-ink/75">
+            Aviax, OKX Agent Trade Kit üzerinde çalışan otonom bir trading agent. Kararlarını metin üreterek değil, JEV ve LAYA karar modellerinden gelen olasılık dağılımlarıyla veriyor.
+          </motion.p>
+        </div>
+      </section>
+
+      {/* 2 · problem */}
+      <section data-slide className={slide}>
+        <div className={wrap}>
+          <motion.div {...reveal} className={kicker}>01 · Problem</motion.div>
+          <motion.h2 {...reveal} className={h2}>
+            LLM agent&apos;lar
+            <br />
+            karar vermiyor, yazıyor.
+          </motion.h2>
+          <div className="mt-10 grid gap-3 sm:grid-cols-3">
+            {[
+              { n: "~3 sn", t: "Tek bir trade kararı için token token üretilen metin." },
+              { n: "0", t: "Kalibre olasılık. \"Bence long\" bir risk kuralına bağlanamaz." },
+              { n: "Parse", t: "Çıktıyı JSON'a çevir, doğrula, tekrar sor. Her adım hata kaynağı." },
+            ].map((c, i) => (
+              <motion.div key={c.n} {...reveal} transition={{ ...reveal.transition, delay: i * 0.08 }} className="rounded-card border border-ink/15 bg-paper p-5 shadow-card">
+                <div className="font-display text-5xl">{c.n}</div>
+                <p className="mt-2 text-ink/70">{c.t}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 3 · insight */}
+      <section data-slide className={`${slide} paper-grid`}>
+        <div className={wrap}>
+          <motion.div {...reveal} className={kicker}>02 · İçgörü</motion.div>
+          <motion.h2 {...reveal} className={h2}>
+            Trade kararı bir
+            <br />
+            <span className="bg-sun px-2">sınıflandırma</span> problemi.
+          </motion.h2>
+          <motion.p {...reveal} className="mt-5 max-w-[720px] text-lg text-ink/75">
+            JEV ve LAYA non-autoregressive karar modelleri. Tek bir forward pass ile seçeneklere kalibre bir dağılım döndürüyorlar. Biz bunu trading&apos;in her adımına uyguladık.
+          </motion.p>
+          <motion.div {...reveal} className="mt-8">
+            <LlmVsJev />
+          </motion.div>
+        </div>
+      </section>
+
+      {/* 4 · six decisions */}
+      <section data-slide className={slide}>
+        <div className={wrap}>
+          <motion.div {...reveal} className={kicker}>03 · Nasıl çalışıyor</motion.div>
+          <motion.h2 {...reveal} className={h2}>Altı karar, altı dağılım.</motion.h2>
+          <div className="mt-8 overflow-hidden rounded-card border border-ink/15 bg-paper shadow-card">
+            {DECISIONS.map((d, i) => (
+              <motion.div key={d.q} {...reveal} transition={{ ...reveal.transition, delay: i * 0.06 }} className="grid grid-cols-[1fr_auto] items-center gap-3 border-b border-ink/10 px-5 py-4 last:border-0 sm:grid-cols-[1.2fr_110px_1fr_1.2fr]">
+                <span className="text-lg font-bold">{d.q}</span>
+                <span className="justify-self-end rounded-full border border-ink/20 px-2.5 py-0.5 font-mono text-xs font-bold sm:justify-self-start">{d.type}</span>
+                <span className="hidden text-ink/60 sm:block">{d.out}</span>
+                <span className="col-span-2 font-mono text-sm sm:col-span-1">{d.ex}</span>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 5 · architecture */}
+      <section data-slide className={`${slide} paper-grid`}>
+        <div className={wrap}>
+          <motion.div {...reveal} className={kicker}>04 · Mimari</motion.div>
+          <motion.h2 {...reveal} className={h2}>ATK&apos;dan ATK&apos;ya.</motion.h2>
+          <div className="mt-10 grid gap-3 md:grid-cols-6">
+            {FLOW.map((f, i) => (
+              <motion.div key={f.k + i} {...reveal} transition={{ ...reveal.transition, delay: i * 0.09 }} className={`relative rounded-card border-2 border-ink p-4 shadow-brut ${f.c}`}>
+                <div className="font-mono text-[10px] font-bold opacity-60">{String(i + 1).padStart(2, "0")}</div>
+                <div className="mt-1 font-display text-2xl uppercase leading-none">{f.k}</div>
+                <p className="mt-2 text-xs leading-snug opacity-75">{f.d}</p>
+                {i < FLOW.length - 1 && <span className="absolute -right-3 top-1/2 z-10 hidden -translate-y-1/2 font-bold md:block">→</span>}
+              </motion.div>
+            ))}
+          </div>
+          <motion.div {...reveal} className="mt-5 rounded-card border border-dashed border-ink/30 bg-paper p-4 text-sm text-ink/70">
+            <b className="text-ink">Yan kol · OpenRouter LLM:</b> sadece anlatıcı. Dağılımları Türkçe açıklıyor, hiçbir karara oy vermiyor. Karar zinciri LLM olmadan da çalışıyor.
+          </motion.div>
+        </div>
+      </section>
+
+      {/* 6 · safety */}
+      <section data-slide className={slide}>
+        <div className={wrap}>
+          <motion.div {...reveal} className={kicker}>05 · Güvenlik</motion.div>
+          <motion.h2 {...reveal} className={h2}>Olasılık varsa, kural da var.</motion.h2>
+          <div className="mt-8 grid gap-3 sm:grid-cols-2">
+            {[
+              ["İki model hemfikir olmalı", "JEV ≥ 0.50 ve LAYA ≥ 0.45, ensemble ≥ 0.55. Aksi halde HOLD."],
+              ["Flat bir seçenek", "Model \"işlem yok\" diyebiliyor. Flat en olası sonuçsa agent bekliyor."],
+              ["Sabit risk tavanı", "Maks. notional ve maks. kaldıraç .env'den. Model bu tavanın içinde ölçekliyor."],
+              ["Her emir TP/SL ile", "ATK swap_place_order, TP ve SL ekli gönderiliyor. Çıplak pozisyon yok."],
+            ].map(([t, d], i) => (
+              <motion.div key={t} {...reveal} transition={{ ...reveal.transition, delay: i * 0.07 }} className="rounded-card border border-ink/15 bg-paper p-5 shadow-card">
+                <div className="text-lg font-bold">{t}</div>
+                <p className="mt-1 text-ink/70">{d}</p>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 7 · demo */}
+      <section data-slide className={`${slide} bg-stage text-white`}>
+        <div className={`${wrap} text-center`}>
+          <motion.div {...reveal} className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-white/50">06 · Canlı demo</motion.div>
+          <motion.h2 {...reveal} className="mt-3 font-display text-6xl uppercase leading-[0.95] sm:text-8xl">
+            İzleyin,
+            <br />
+            <span className="text-sun">karar versin.</span>
+          </motion.h2>
+          <motion.div {...reveal} className="mt-10 flex flex-wrap justify-center gap-3">
+            <Link href="/agent" className="inline-flex min-h-[52px] items-center rounded-btn bg-sun px-6 text-lg font-bold text-black shadow-btn transition-transform hover:-translate-y-px">
+              Agent&apos;ı aç →
+            </Link>
+            <Link href="/trade" className="inline-flex min-h-[52px] items-center rounded-btn border border-white/30 px-6 text-lg font-bold transition-colors hover:bg-white hover:text-black">
+              Trade ekranı
+            </Link>
+          </motion.div>
+          <motion.div {...reveal} className="mx-auto mt-12 max-w-[900px] text-left">
+            <LlmVsJev dark />
+          </motion.div>
+        </div>
+      </section>
+
+      {/* 8 · next */}
+      <section data-slide className={`${slide} paper-grid`}>
+        <div className={wrap}>
+          <motion.div {...reveal} className={kicker}>07 · Sırada ne var</motion.div>
+          <motion.h2 {...reveal} className={h2}>
+            Doğrulanabilir
+            <br />
+            <span className="bg-sun px-2">tahmin geçmişi.</span>
+          </motion.h2>
+          <div className="mt-8 grid gap-3 sm:grid-cols-3">
+            {[
+              ["Avalanche", "Her kararın dağılım hash'i C-Chain'e. Agent'ın tahmin performansı herkes tarafından denetlenebilir."],
+              ["Fine-tune LAYA", "Açık kaynak LAYA'yı kendi trade sonuçlarımızla eğit. Kalibrasyon her gün iyileşsin."],
+              ["Kalibrasyon paneli", "Tahmin edilen olasılık ile gerçekleşen sonuç: Brier skoru ve güvenilirlik eğrisi."],
+            ].map(([t, d], i) => (
+              <motion.div key={t} {...reveal} transition={{ ...reveal.transition, delay: i * 0.08 }} className="rounded-card border border-ink/15 bg-paper p-5 shadow-card">
+                <div className="font-display text-3xl uppercase">{t}</div>
+                <p className="mt-2 text-ink/70">{d}</p>
+              </motion.div>
+            ))}
+          </div>
+          <motion.p {...reveal} className="mt-12 font-display text-4xl uppercase">Aviax · LLM&apos;ler konuşur, JEV karar verir.</motion.p>
+        </div>
+      </section>
+    </div>
+  );
+}

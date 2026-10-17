@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: 20 20 16;
+  --paper: 255 255 255;
+  --muted: 110 110 104;
+  --line: 20 20 16;
+  --sun: 255 199 0;
+  --long: 0 168 107;
+  --short: 232 65 66;
+  --stage: 12 12 10;
+  --jev: 255 199 0;
+  --laya: 64 214 196;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 180ms;
+  --dur-base: 420ms;
+  --dur-slow: 900ms;
+}
+
+html { -webkit-font-smoothing: antialiased; }
+body { background: rgb(var(--paper)); color: rgb(var(--ink)); }
+
+/* faint grid paper behind the pages */
+.paper-grid {
+  background-image:
+    linear-gradient(rgb(var(--ink) / 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--ink) / 0.04) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.num { font-variant-numeric: tabular-nums; }
+
+:focus-visible { outline: 2px solid rgb(var(--ink)); outline-offset: 2px; border-radius: 6px; }
+
+.scroll-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: rgb(var(--ink) / 0.15); border-radius: 6px; }
+.stage .scroll-thin::-webkit-scrollbar-thumb { background: rgb(255 255 255 / 0.15); }
+
+@keyframes blink { 50% { opacity: 0; } }
+.caret::after { content: "▍"; animation: blink 1s steps(1) infinite; margin-left: 2px; }
+
+@keyframes flow { to { stroke-dashoffset: -40; } }
+.flow { stroke-dasharray: 4 6; animation: flow 1.2s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}

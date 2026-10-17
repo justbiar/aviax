@@ -1,0 +1,16 @@
+node_modules
+.next
+*.tsbuildinfo
+next-env.d.ts
+
+# env files (secrets)
+.env
+.env.*
+
+# markdown docs stay local
+*.md
+
+# local runtime data and tooling
+data/
+.claude/
+.DS_Store
