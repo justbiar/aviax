@@ -7,7 +7,9 @@
     "mcp:decision": "tsx scripts/aviax-decision-mcp.ts",
     "build": "next build",
     "start": "next start -p 3000",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "start:prod": "NEXT_DIST_DIR=.next-prod next start -p 3000",
+    "build:prod": "NEXT_DIST_DIR=.next-prod next build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.1",
