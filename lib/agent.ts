@@ -282,17 +282,35 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
   /* 8. GATE: yes/no proposition, both models must agree ----------------- */
   yield { type: "stage", stage: "gate", status: "start" };
   const rr = tpAtr / slAtr;
+  // Two complementary phrasings, chosen by benchmarking both models on bull/flat/bear
+  // reference states: a factual setup proposition and an execute/wait choice. Each
+  // model's gate score is the mean of the two, which separates trending from flat or
+  // falling markets far better than an abstract "positive expected value" claim.
+  const gPrior = Math.min(0.92, Math.max(0.08, 0.35 + dirP * 0.45 + (rr - 1) * 0.08 - Math.max(0, x.atrPct - 2) * 0.1));
   const gateQ: Record<string, Question> = {
-    gate: {
+    gate_setup: {
       type: "noul",
-      instructions: `Opening a ${side} on ${x.instId} now with TP ${tp}, SL ${slPx} (reward/risk ${rr.toFixed(2)}) has positive expected value.`,
-      prior: Math.min(0.92, Math.max(0.08, 0.35 + dirP * 0.45 + (rr - 1) * 0.08 - Math.max(0, x.atrPct - 2) * 0.1)),
+      instructions: `The state shows trend and momentum aligned upward (EMA20 above EMA50 and positive 4h change) without an overbought RSI, so a spot buy of ${base(x.instId)} is supported.`,
+      prior: gPrior,
+    },
+    gate_action: {
+      type: "choice",
+      instructions: "Given only this market state, what should a disciplined spot trader do right now?",
+      criteria: { execute: "Buy now: trend and momentum support an entry", wait: "Wait: no clear upward edge in the data" },
+      prior: { execute: (gPrior - 0.5) * 3, wait: (0.5 - gPrior) * 3 },
     },
   };
   const [gj, gl] = await Promise.all([decide("jev", state, gateQ), decide("laya", state, gateQ)]);
-  const gate = 0.6 * (gj.answers.gate.value ?? 0.5) + 0.4 * (gl.answers.gate.value ?? 0.5);
+  const gScore = (r: DecisionResult) => 0.5 * (r.answers.gate_setup.value ?? 0.5) + 0.5 * (r.answers.gate_action.probabilities.execute ?? 0.5);
+  const gJ = gScore(gj);
+  const gL = gScore(gl);
+  const gate = 0.6 * gJ + 0.4 * gL;
   const minGate = opts.minGate ?? 0.55;
-  const pass = gate >= minGate && (gj.answers.gate.value ?? 0) >= 0.5 && (gl.answers.gate.value ?? 0) >= 0.45;
+  // Ensemble must clear the mandate threshold; a single model can veto only with strong disagreement.
+  const pass = gate >= minGate && gJ >= 0.35 && gL >= 0.35;
+  const asNoul = (v: number): Answer => ({ type: "noul", probabilities: { yes: v, no: 1 - v }, value: v, confidence: Math.abs(v - 0.5) * 2 });
+  gj.answers.gate = asNoul(gJ);
+  gl.answers.gate = asNoul(gL);
   yield { type: "decision", key: "gate", title: "Risk kapısı", jev: gj.answers.gate, laya: gl.answers.gate, jevMs: gj.latencyMs, jevSrc: gj.modelId, jevProvider: gj.provider, layaMs: gl.latencyMs, pick: pass ? "yes" : "no" };
   yield { type: "stage", stage: "gate", status: pass ? "done" : "fail", note: `p(EV>0)=${pct(gate)}` };
 

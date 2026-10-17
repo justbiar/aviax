@@ -118,7 +118,7 @@ export type NewAgent = Pick<FleetAgent, "name" | "model" | "validator" | "openro
   owner: Hex | null;
 };
 
-type Store = { agents: Map<string, FleetAgent>; busy: Set<string>; timer?: NodeJS.Timeout; loaded: boolean };
+type Store = { agents: Map<string, FleetAgent>; busy: Set<string>; timer?: NodeJS.Timeout; loaded: boolean; tick?: () => Promise<void> };
 const g = globalThis as typeof globalThis & { __fleet?: Store };
 const store: Store = (g.__fleet ??= { agents: new Map(), busy: new Set(), loaded: false });
 
@@ -165,7 +165,14 @@ function save() {
 export function ensureFleet() {
   load();
   for (const a of store.agents.values()) migrate(a);
-  if (!store.timer) store.timer = setInterval(() => tick().catch(() => null), 5000);
+  // A timer created by an older module version calls stale code: replace it once.
+  if (store.timer && !store.tick) {
+    clearInterval(store.timer);
+    store.timer = undefined;
+  }
+  // The timer always calls the latest tick, so code reloads take effect immediately.
+  store.tick = tick;
+  if (!store.timer) store.timer = setInterval(() => store.tick?.().catch(() => null), 5000);
 }
 
 export const equity = (a: FleetAgent) => a.budget + a.realizedPnl + (a.position ? a.upl : 0);
