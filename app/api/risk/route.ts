@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { NextRequest } from "next/server";
 import { DEFAULT_POLICY, runRiskDesk, type Policy, type Shock, type Source } from "@/lib/riskDesk";
 import { getCompanySession, getCompanySessionId, historyKey } from "@/lib/companySession";
@@ -6,6 +7,14 @@ import type { RiskEvent } from "@/lib/riskDesk";
 
 export const runtime = "nodejs";
 
+/**
+ * Shared rounds: viewers of the same account and policy share one model run instead of each
+ * starting their own. A request joins a round in progress, or replays one that finished within
+ * SHARE_MS; nobody is turned away, the machine just does the work once.
+ */
+const SHARE_MS = 8_000;
+type Round = { events: RiskEvent[]; done: boolean; at: number; waiters: Set<() => void> };
+const rounds = ((globalThis as typeof globalThis & { __riskRounds?: Map<string, Round> }).__riskRounds ??= new Map<string, Round>());
 
 export async function POST(req: NextRequest) {
   let body: { source?: Source; shock?: Shock; policy?: Policy; companyName?: string; request?: string; reviewers?: string[]; execute?: boolean };
@@ -30,22 +39,52 @@ export async function POST(req: NextRequest) {
       ? { primary: companySession.modelSpec ?? "ollama:strands-decider", second: companySession.secondModelSpec ?? "" }
       : undefined;
   const activeReviewers = companySession?.model === "local" ? [] : reviewers;
+  const execute = body.execute !== false;
+
+  // Same account + same inputs = same round. The account is identified by a hash of its API key.
+  const account = createHash("sha256").update(companySession?.okx.apiKey ?? process.env.OKX_API_KEY ?? "").digest("hex").slice(0, 16);
+  const key = JSON.stringify({ account, source, shock, policy, companyName, reviewers: activeReviewers, seats, execute, request: body.request ?? "" });
+  for (const [k, r] of rounds) if (r.done && Date.now() - r.at > SHARE_MS) rounds.delete(k);
+
+  let round = rounds.get(key);
+  const owner = !round;
+  if (!round) {
+    const r: Round = { events: [], done: false, at: Date.now(), waiters: new Set() };
+    round = r;
+    rounds.set(key, r);
+    const push = (e: RiskEvent) => { r.events.push(e); r.waiters.forEach((w) => w()); };
+    void (async () => {
+      try {
+        for await (const event of runRiskDesk({ source, shock, policy, companyName, request: body.request?.trim() || undefined, reviewers: activeReviewers, execute, ...(companySession ? { okxCredentials: companySession.okx, openrouterKey: companySession.openrouterKey, seats } : {}) })) push(event);
+        if (source === "okx" && shock === "none") recordRound(historyKey(companySession), r.events.filter((e) => e.type !== "stage"));
+      } catch (e) {
+        push({ type: "error", text: e instanceof Error ? e.message : "Risk analizi başarısız" });
+      } finally {
+        r.done = true;
+        r.at = Date.now();
+        r.waiters.forEach((w) => w());
+      }
+    })();
+  }
+
+  // Stream the round's events to this viewer as they arrive (or replay them if it already finished).
+  const shared = round;
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
-      const round: RiskEvent[] = [];
-      try {
-        for await (const event of runRiskDesk({ source, shock, policy, companyName, request: body.request?.trim() || undefined, reviewers: activeReviewers, execute: body.execute !== false, ...(companySession ? { okxCredentials: companySession.okx, openrouterKey: companySession.openrouterKey, seats } : {}) })) {
-          if (event.type !== "stage") round.push(event);
-          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
-        }
-        if (source === "okx" && shock === "none") recordRound(historyKey(companySession), round);
-      } catch (e) {
-        controller.enqueue(encoder.encode(`${JSON.stringify({ type: "error", text: e instanceof Error ? e.message : "Risk analizi başarısız" })}\n`));
-      } finally {
-        controller.close();
+      let sent = 0;
+      while (true) {
+        while (sent < shared.events.length) controller.enqueue(encoder.encode(`${JSON.stringify(shared.events[sent++])}\n`));
+        if (shared.done) break;
+        await new Promise<void>((resolve) => {
+          const w = () => { shared.waiters.delete(w); resolve(); };
+          shared.waiters.add(w);
+          // An event or the end may have landed between the drain above and registering.
+          if (sent < shared.events.length || shared.done) w();
+        });
       }
+      controller.close();
     },
   });
-  return new Response(stream, { headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache, no-transform" } });
+  return new Response(stream, { headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache, no-transform", "X-Aviax-Round": owner ? "new" : "shared" } });
 }

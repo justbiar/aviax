@@ -48,7 +48,9 @@ export function CandleChart({ instId, overlays = [], height = 420, dark = false 
     let first = true;
     let lastTime = 0;
     const load = async () => {
-      const r = await fetch(`/api/market?kind=candles&instId=${instId}&bar=${bar}&limit=300`, { cache: "no-store" });
+      // Full history once, then only the last few candles: the update path uses just the tail.
+      if (!first && document.visibilityState !== "visible") return;
+      const r = await fetch(`/api/market?kind=candles&instId=${instId}&bar=${bar}&limit=${first ? 300 : 3}`, { cache: "no-store" });
       const rows: string[][] = await r.json();
       if (!alive || !Array.isArray(rows) || !series.current) return;
       const data = rows

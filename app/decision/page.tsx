@@ -66,7 +66,8 @@ export default function DecisionPage() {
   useEffect(() => {
     if (!monitoring || !reviewersReady || !accountReady || !companyConnected) return;
     void runRef.current();
-    const timer = window.setInterval(() => void runRef.current(), 10_000);
+    // Background tabs do not run model rounds: every open tab would otherwise load the models.
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") void runRef.current(); }, 10_000);
     return () => window.clearInterval(timer);
   }, [monitoring, reviewersReady, accountReady, companyConnected]);
   const portfolio = [...events].reverse().find((e) => e.type === "portfolio");
