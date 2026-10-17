@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import { LlmVsJev } from "@/components/agent/LlmVsJev";
+import { LlmVsDecision } from "@/components/agent/LlmVsDecision";
+import { ModelCompare } from "@/components/pitch/ModelCompare";
 import { BusinessModel } from "@/components/pitch/BusinessModel";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
@@ -25,8 +26,8 @@ const DECISIONS = [
 const FLOW = [
   { k: "OKX ATK", d: "market_get_tickers · candles · funding", c: "bg-paper" },
   { k: "Özellikler", d: "trend · RSI · ATR · hacim z · funding", c: "bg-paper" },
-  { k: "JEV ∥ LAYA", d: "paralel worker, pair başına 2 forward pass", c: "bg-sun" },
-  { k: "Ensemble", d: "0.6 JEV + 0.4 LAYA", c: "bg-paper" },
+  { k: "2 karar modeli", d: "ana model ∥ ikinci görüş, parite başına 2 forward pass", c: "bg-sun" },
+  { k: "Ensemble", d: "0.6 ana + 0.4 ikinci görüş", c: "bg-paper" },
   { k: "Risk kapısı", d: "noul ≥ 0.55 ve iki model hemfikir", c: "bg-paper" },
   { k: "OKX ATK", d: "spot_place_order + OCO TP/SL", c: "bg-ink text-paper" },
 ];
@@ -84,7 +85,7 @@ export default function PitchPage() {
             </span>
           </motion.h1>
           <motion.p {...reveal} className="mx-auto mt-6 max-w-[640px] text-xl font-medium text-ink/75">
-            Aviax, OKX Agent Trade Kit üzerinde çalışan otonom bir trading agent. Kararlarını metin üreterek değil, JEV ve LAYA karar modellerinden gelen olasılık dağılımlarıyla veriyor.
+            Aviax, OKX Agent Trade Kit üzerinde çalışan otonom bir trading agent. Kararlarını metin üreterek değil, iki karar modelinden (strands-decider ve laya) gelen olasılık dağılımlarıyla veriyor.
           </motion.p>
         </div>
       </section>
@@ -94,15 +95,15 @@ export default function PitchPage() {
         <div className={wrap}>
           <motion.div {...reveal} className={kicker}>01 · Problem</motion.div>
           <motion.h2 {...reveal} className={h2}>
-            LLM agent&apos;lar
+            LLM ajanları komut izler.
             <br />
-            karar vermiyor, yazıyor.
+            Karar anında yazar.
           </motion.h2>
           <div className="mt-10 grid gap-3 sm:grid-cols-3">
             {[
-              { n: "~3 sn", t: "Tek bir trade kararı için token token üretilen metin." },
-              { n: "0", t: "Kalibre olasılık. \"Bence long\" bir risk kuralına bağlanamaz." },
-              { n: "Parse", t: "Çıktıyı JSON'a çevir, doğrula, tekrar sor. Her adım hata kaynağı." },
+              { n: "Komut", t: "LLM ajanı talimat ve araç çerçevesinde iyi çalışır: plan kurar, API çağırır. Ama \"al mı bekle mi\" sorusuna metin yazar." },
+              { n: "4–108 sn", t: "Bizim ölçümümüz: ücretsiz LLM'lerle tek bir karar turu. Her istekte farklı modele yönlendirme, 429 kota." },
+              { n: "Parse", t: "Metni JSON'a çevir, doğrula, boş geleni tekrar sor. \"Bence long\" bir risk eşiğine doğrudan bağlanamaz." },
             ].map((c, i) => (
               <motion.div key={c.n} {...reveal} transition={{ ...reveal.transition, delay: i * 0.08 }} className="rounded-card border border-ink/15 bg-paper p-5 shadow-card">
                 <div className="font-display text-5xl">{c.n}</div>
@@ -123,11 +124,17 @@ export default function PitchPage() {
             <span className="bg-sun px-2">sınıflandırma</span> problemi.
           </motion.h2>
           <motion.p {...reveal} className="mt-5 max-w-[720px] text-lg text-ink/75">
-            JEV ve LAYA non-autoregressive karar modelleri. Tek bir forward pass ile seçeneklere kalibre bir dağılım döndürüyorlar. Biz bunu trading&apos;in her adımına uyguladık.
+            Karar modelleri metin üretmez: verilen seçeneklerin her birine tek bir forward pass ile olasılık verir. Yerelde iki tane çalıştırıyoruz, strands-decider (2B) ana karar verici, laya (421M) ikinci görüş. Trading&apos;in her adımını bu tür bir soruya çevirdik.
           </motion.p>
           <motion.div {...reveal} className="mt-8">
-            <LlmVsJev />
+            <LlmVsDecision />
           </motion.div>
+          <motion.div {...reveal} className="mt-6">
+            <ModelCompare />
+          </motion.div>
+          <motion.p {...reveal} className="mt-4 text-sm text-muted">
+            İkisi rakip değil: LLM'i yapabildiği işte (açıklama, anlatım, isteğe bağlı OpenRouter seçeneği) tutuyoruz, kararı karar modeline veriyoruz.
+          </motion.p>
         </div>
       </section>
 
@@ -177,7 +184,7 @@ export default function PitchPage() {
           <motion.h2 {...reveal} className={h2}>Olasılık varsa, kural da var.</motion.h2>
           <div className="mt-8 grid gap-3 sm:grid-cols-2">
             {[
-              ["İki model hemfikir olmalı", "JEV ≥ 0.50 ve LAYA ≥ 0.45, ensemble ≥ 0.55. Aksi halde HOLD."],
+              ["İki model hemfikir olmalı", "Risk kapısı iki ifadeyle iki modele sorulur. Ensemble yetkideki min. güveni geçmeli; bir model %35'in altındaysa veto eder. Aksi halde HOLD."],
               ["Bekle bir seçenek", "Model \"işlem yok\" diyebiliyor. Bekle en olası sonuçsa ajan USDT'de kalıyor."],
               ["Bütçe tavanı", "Her ajanın kendi USDT bütçesi var. Spot, kaldıraç yok; model alımı bütçenin içinde ölçekliyor."],
               ["Her alım OCO ile", "Alımdan hemen sonra ATK ile TP ve SL içeren OCO satış emri. Korumasız pozisyon yok."],
@@ -262,7 +269,7 @@ export default function PitchPage() {
             </Link>
           </motion.div>
           <motion.div {...reveal} className="mx-auto mt-12 max-w-[900px] text-left">
-            <LlmVsJev dark />
+            <LlmVsDecision dark />
           </motion.div>
         </div>
       </section>
@@ -288,7 +295,7 @@ export default function PitchPage() {
               </motion.div>
             ))}
           </div>
-          <motion.p {...reveal} className="mt-12 font-display text-4xl uppercase">Aviax · LLM&apos;ler konuşur, JEV karar verir.</motion.p>
+          <motion.p {...reveal} className="mt-12 font-display text-4xl uppercase">Aviax · LLM&apos;ler yazar, karar modelleri karar verir.</motion.p>
         </div>
       </section>
     </div>

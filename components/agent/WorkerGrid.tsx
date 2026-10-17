@@ -64,8 +64,8 @@ export function WorkerGrid({ s }: { s: AgentState }) {
                 <div className="mt-1 space-y-1">
                   {w ? (
                     <>
-                      <Stack p={w.jev.answers.direction.probabilities} label="JEV" color="text-sun" />
-                      <Stack p={w.laya.answers.direction.probabilities} label="LAYA" color="text-[rgb(64,214,196)]" />
+                      <Stack p={w.jev.answers.direction.probabilities} label="ANA" color="text-sun" />
+                      <Stack p={w.laya.answers.direction.probabilities} label="2." color="text-[rgb(64,214,196)]" />
                       <div className="flex justify-between pt-1 font-mono text-[9px] text-white/40">
                         <span>{w.jev.latencyMs}ms · {w.laya.latencyMs}ms</span>
                         <span>edge {w.edge.toFixed(2)}</span>

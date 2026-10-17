@@ -8,7 +8,7 @@ import { short } from "@/lib/fmt";
 /**
  * The probability field. Every candidate pair owns a sector on the outer ring.
  * Spiral filaments stream from the agent core to each sector; their weight is
- * the probability mass JEV (amber) and LAYA (teal) put on that pair. Inner rings
+ * the probability mass the primary model (amber) and the second opinion (teal) put on that pair. Inner rings
  * show the direction distribution and the risk-gate probability.
  */
 
@@ -75,7 +75,7 @@ export function DecisionField({ s }: { s: AgentState }) {
   })();
 
   return (
-    <svg viewBox="0 0 640 640" className="h-full w-full" role="img" aria-label="JEV ve LAYA olasılık alanı">
+    <svg viewBox="0 0 640 640" className="h-full w-full" role="img" aria-label="Karar modellerinin olasılık alanı">
       <defs>
         <radialGradient id="core" cx="50%" cy="50%" r="50%">
           <stop offset="0%" stopColor="rgb(255,199,0)" stopOpacity="0.35" />
@@ -244,9 +244,9 @@ export function DecisionField({ s }: { s: AgentState }) {
       {/* legend */}
       <g className="font-mono" fontSize={10}>
         <rect x={16} y={606} width={10} height={3} fill="rgb(255,199,0)" />
-        <text x={32} y={610} fill="white" fillOpacity={0.6}>JEV dağılımı</text>
+        <text x={32} y={610} fill="white" fillOpacity={0.6}>ana model</text>
         <rect x={120} y={606} width={10} height={3} fill="rgb(64,214,196)" />
-        <text x={136} y={610} fill="white" fillOpacity={0.6}>LAYA dağılımı</text>
+        <text x={136} y={610} fill="white" fillOpacity={0.6}>ikinci görüş</text>
         <text x={624} y={610} textAnchor="end" fill="white" fillOpacity={0.4}>kalınlık = olasılık kütlesi</text>
       </g>
     </svg>

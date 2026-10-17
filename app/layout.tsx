@@ -10,7 +10,7 @@ const mono = JetBrains_Mono({ subsets: ["latin", "latin-ext"], variable: "--font
 
 export const metadata: Metadata = {
   title: "Aviax · Prediction-native trading agent",
-  description: "An autonomous OKX trading agent that decides with probability distributions from JEV and LAYA, not generated text.",
+  description: "An autonomous OKX trading agent whose decisions come from decision models as probability distributions, not generated text.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

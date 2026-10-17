@@ -59,15 +59,15 @@ export default function AgentPage() {
             <span className="h-2 w-2 rounded-full bg-sun" /> Prediction-native trading agent · OKX ATK
           </motion.span>
           <motion.h1 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, ease: EASE, delay: 0.08 }} className="mt-5 font-display text-[44px] uppercase leading-[0.95] tracking-tight sm:text-7xl">
-            LLM&apos;ler konuşur.
+            LLM&apos;ler yazar.
             <br />
             <span className="relative inline-block">
-              <span className="relative z-10">JEV karar verir.</span>
+              <span className="relative z-10">Karar modelleri karar verir.</span>
               <motion.span className="absolute inset-x-[-6px] bottom-1 z-0 h-[38%] origin-left bg-sun" initial={{ scaleX: 0 }} animate={{ scaleX: 1 }} transition={{ duration: 0.7, ease: EASE, delay: 0.5 }} />
             </span>
           </motion.h1>
           <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6, delay: 0.25 }} className="mx-auto mt-5 max-w-[640px] text-lg font-medium text-ink/75 sm:text-xl">
-            Parite, yön, boyut, TP ve SL. Her karar JEV ve LAYA&apos;dan gelen bir olasılık dağılımı. Metin yok, tahmin var.
+            Parite, yön, boyut, TP ve SL. Her adım iki karar modelinden gelen bir olasılık dağılımı: ana model karar verir, ikinci model doğrular. Metin yok, tahmin var.
           </motion.p>
 
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: EASE, delay: 0.35 }} className="mx-auto mt-8 max-w-[860px]">
@@ -86,7 +86,7 @@ export default function AgentPage() {
             <span>model çağrısı <b className="text-ink">{s.modelCalls}</b></span>
             <span>ort. gecikme <b className="text-ink">{avgMs ? `${avgMs.toFixed(0)}ms` : "-"}</b></span>
             <span>run süresi <b className="text-ink">{s.totalMs ? `${(s.totalMs / 1000).toFixed(2)}s` : "-"}</b></span>
-            <span>JEV kaynağı <b className="text-ink">{s.providers ? (s.providers.jev === "shadow" ? "shadow" : s.jevModel) : "-"}</b></span>
+            <span>ana model <b className="text-ink">{s.providers ? (s.providers.jev === "shadow" ? "shadow" : s.jevModel) : "-"}</b></span>
           </div>
         </div>
       </section>
@@ -138,7 +138,7 @@ export default function AgentPage() {
             <div className="rounded-card border border-white/10 bg-black/40 p-2">
               <div className="flex items-center justify-between px-3 pt-2">
                 <h2 className="font-display text-xl tracking-wide">{current ? `${current.name} · olasılık alanı` : scenario ? `Senaryo · ${scenario}` : "Olasılık alanı"}</h2>
-                <span className="font-mono text-[10px] text-white/40">{s.providers ? `JEV ${s.providers.jev === "shadow" ? "shadow" : s.jevModel} · LAYA ${s.providers.laya === "endpoint" ? "laya (yerel)" : s.providers.laya}` : "hazır"}</span>
+                <span className="font-mono text-[10px] text-white/40">{s.providers ? `ana ${s.providers.jev === "shadow" ? "shadow" : s.jevModel} · ikinci görüş ${s.providers.laya === "endpoint" ? "yerel model" : s.providers.laya}` : "hazır"}</span>
               </div>
               <div className="aspect-square w-full">
                 <DecisionField s={s} />

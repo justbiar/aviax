@@ -12,12 +12,12 @@ export type StageStatus = "idle" | "start" | "done" | "skip" | "fail";
 export const STAGES: { key: Stage; label: string; who: string }[] = [
   { key: "scan", label: "Tarama", who: "ATK" },
   { key: "features", label: "Özellikler", who: "ATK" },
-  { key: "workers", label: "Paralel tahmin", who: "JEV + LAYA" },
-  { key: "pair", label: "Parite", who: "JEV choice" },
-  { key: "direction", label: "Yön", who: "JEV choice" },
-  { key: "size", label: "Boyut", who: "JEV score" },
-  { key: "risk", label: "TP / SL", who: "JEV choice" },
-  { key: "gate", label: "Risk kapısı", who: "JEV noul" },
+  { key: "workers", label: "Paralel tahmin", who: "2 karar modeli" },
+  { key: "pair", label: "Parite", who: "choice" },
+  { key: "direction", label: "Yön", who: "choice" },
+  { key: "size", label: "Boyut", who: "score" },
+  { key: "risk", label: "TP / SL", who: "choice" },
+  { key: "gate", label: "Risk kapısı", who: "noul + choice" },
   { key: "execute", label: "Emir", who: "ATK" },
 ];
 
@@ -88,7 +88,7 @@ export function reduce(p: AgentState, ev: TimedEvent): AgentState {
       n.providers = ev.providers;
       n.jevModel = ev.jevModel;
       n.execute = ev.execute;
-      log(`agent online · ${ev.execute ? "EXECUTE" : "PLAN modu"} · JEV ${ev.providers.jev === "shadow" ? "shadow" : ev.jevModel} · LAYA ${ev.providers.laya === "endpoint" ? "laya (yerel)" : ev.providers.laya}`, "info");
+      log(`agent online · ${ev.execute ? "EXECUTE" : "PLAN modu"} · ana model ${ev.providers.jev === "shadow" ? "shadow" : ev.jevModel} · ikinci görüş ${ev.providers.laya === "endpoint" ? "yerel" : ev.providers.laya}`, "info");
       break;
     case "stage":
       n.stages = { ...p.stages, [ev.stage]: ev.status };

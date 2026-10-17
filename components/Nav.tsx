@@ -2,10 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
 import { WalletMenu } from "./wallet/WalletMenu";
-
-type Status = { okx: boolean; demo: boolean; jev: boolean; jevProvider?: string; laya: boolean; llm: boolean };
 
 const LINKS = [
   { href: "/trade", label: "Trade" },
@@ -15,30 +12,6 @@ const LINKS = [
 
 export function Nav() {
   const path = usePathname();
-  const [s, setS] = useState<Status | null>(null);
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    fetch("/api/status").then((r) => r.json()).then(setS).catch(() => null);
-  }, []);
-  useEffect(() => {
-    const close = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, []);
-
-  const rows = s
-    ? [
-        { k: "OKX", v: s.okx ? (s.demo ? "Demo hesap bağlı" : "Canlı hesap") : "Anahtar yok", ok: s.okx },
-        { k: "Agent Trade Kit", v: "MCP sunucusu", ok: true },
-        { k: "JEV", v: s.jev ? (s.jevProvider === "openrouter" ? "OpenRouter" : s.jevProvider === "endpoint" ? "Yerel · Ollama" : "TypeSafe") : "Simülasyon", ok: s.jev },
-        { k: "LAYA", v: s.laya ? "Yerel · Ollama" : "Simülasyon", ok: s.laya },
-        { k: "Anlatıcı LLM", v: s.llm ? "OpenRouter" : "Kapalı", ok: s.llm },
-      ]
-    : [];
-  const healthy = s?.okx;
-
   return (
     <header className="sticky top-0 z-40 border-b border-ink/10 bg-paper/85 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-4 px-4 sm:px-6">
