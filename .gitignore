@@ -16,3 +16,4 @@ data/
 .claude/
 .DS_Store
 .next-prod-new
+!README.md
