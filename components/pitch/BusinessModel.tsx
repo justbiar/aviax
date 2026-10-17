@@ -67,9 +67,9 @@ export function BusinessModel() {
         <Slider label="Tur aralığı" value={intervalMin} min={1} max={60} step={1} fmt={(v) => `${v} dk`} onChange={setIntervalMin} />
         <Slider label="Model maliyeti (tur başına, platform öder)" value={cost} min={0} max={0.005} step={0.0001} fmt={(v) => usd(v, 4)} onChange={setCost} />
         <Slider label="Benimsemenin sıfırlandığı ücret (F)" value={F} min={20} max={60} step={1} fmt={(v) => `%${v}`} onChange={setF} />
-        <div className="pt-2 text-xs font-bold uppercase tracking-wider text-muted">Pazar (x402 sinyal satışı)</div>
-        <Slider label="Sinyal fiyatı" value={signalPrice} min={0.001} max={0.1} step={0.001} fmt={(v) => `${v.toFixed(3)} USDC`} onChange={setSignalPrice} />
-        <Slider label="Aylık sinyal alımı" value={buyers} min={0} max={10000} step={100} fmt={(v) => v.toLocaleString("tr-TR")} onChange={setBuyers} />
+        <div className="pt-2 text-xs font-bold uppercase tracking-wider text-muted">Pazar (x402 senaryo satışı)</div>
+        <Slider label="Senaryo fiyatı" value={signalPrice} min={0.001} max={0.1} step={0.001} fmt={(v) => `${v.toFixed(3)} USDC`} onChange={setSignalPrice} />
+        <Slider label="Aylık senaryo sayısı" value={buyers} min={0} max={10000} step={100} fmt={(v) => v.toLocaleString("tr-TR")} onChange={setBuyers} />
         <Slider label="Platform payı" value={take} min={0} max={30} step={1} fmt={(v) => `%${v}`} onChange={setTake} />
       </div>
 
@@ -88,7 +88,7 @@ export function BusinessModel() {
             ["Başa baş ücret", `%${(m.breakEven * 100).toFixed(1)}`],
             ["Platform net (kendi ajanlar)", usd(m.ownPlatform)],
             ["Kullanıcının net beklenen getirisi", usd(m.userNet)],
-            ["Sahibin sinyal geliri (x402)", usd(m.ownerSignalIncome)],
+            ["Sahibin senaryo geliri (x402)", usd(m.ownerSignalIncome)],
             ["Platform payı (pazar)", usd(m.marketPlatform)],
           ].map(([k, v]) => (
             <div key={k} className="rounded-card border border-ink/15 bg-paper p-3 shadow-card">

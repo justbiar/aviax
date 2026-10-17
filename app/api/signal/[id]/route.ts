@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { hasChain } from "@/lib/chain";
-import { ensureFleet, getAgent, latestSignal, recordSale } from "@/lib/fleet";
+import { runAgent } from "@/lib/agent";
+import { hasChain, txUrl } from "@/lib/chain";
+import { ensureFleet, getAgent, recordSale } from "@/lib/fleet";
 import { requirements, verifyAndSettle } from "@/lib/x402";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
- * Paid signal of a listed agent (x402, exact scheme, Fuji USDC).
+ * Paid scenario of a listed agent (x402, exact scheme, Fuji USDC).
  * No X-PAYMENT -> 402 with requirements; payTo is the agent's own wallet.
- * Valid payment -> settled on Fuji, the buyer gets the agent's latest decision.
+ * Valid payment -> settled on Fuji, then the agent runs a live decision cycle for the
+ * buyer with its own model and mandate (plan only, no orders) streamed as NDJSON.
  */
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   ensureFleet();
@@ -17,15 +19,43 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const a = getAgent(id);
   if (!a || !a.listing.enabled) return NextResponse.json({ error: "Bu ajan pazarda değil" }, { status: 404 });
   if (!hasChain()) return NextResponse.json({ error: "Facilitator cüzdanı yok" }, { status: 503 });
-  const r = requirements(req.nextUrl.toString(), a.listing.priceUsdc, a.chain.wallet, `Aviax signal · ${a.name} (ERC-8004 #${a.chain.agentId})`);
+  const r = requirements(req.nextUrl.toString(), a.listing.priceUsdc, a.chain.wallet, `Aviax scenario · ${a.name} (ERC-8004 #${a.chain.agentId})`);
   const header = req.headers.get("X-PAYMENT");
   if (!header) return NextResponse.json({ x402Version: 1, error: "X-PAYMENT header is required", accepts: [r] }, { status: 402 });
+
+  let settled: Awaited<ReturnType<typeof verifyAndSettle>>;
   try {
-    const s = await verifyAndSettle(header, r);
-    recordSale(id, s.payer, s.amount, s.txHash);
-    const receipt = Buffer.from(JSON.stringify({ success: true, transaction: s.txHash, network: r.network, payer: s.payer, amount: s.amount })).toString("base64");
-    return NextResponse.json({ ok: true, txHash: s.txHash, signal: latestSignal(id) }, { headers: { "X-PAYMENT-RESPONSE": receipt } });
+    settled = await verifyAndSettle(header, r);
   } catch (e) {
     return NextResponse.json({ x402Version: 1, error: (e as Error).message, accepts: [r] }, { status: 402 });
   }
+  recordSale(id, settled.payer, settled.amount, settled.txHash);
+
+  const enc = new TextEncoder();
+  const line = (o: unknown) => enc.encode(JSON.stringify(o) + "\n");
+  const stream = new ReadableStream({
+    async start(controller) {
+      controller.enqueue(line({ type: "log", tone: "ok", tool: "x402", text: `Senaryo ödendi: ${settled.amount} USDC → ${a.name} cüzdanı · ${txUrl(settled.txHash)}` }));
+      try {
+        for await (const ev of runAgent({
+          execute: false,
+          universe: a.universe,
+          model: a.model,
+          validator: a.validator,
+          openrouterKey: a.openrouterKey,
+          allowed: a.mandate.allowed,
+          maxTradeUsdt: a.mandate.maxTradeUsdt,
+          minGate: a.mandate.minGate,
+          budget: a.budget,
+        }))
+          controller.enqueue(line(ev));
+      } catch (e) {
+        controller.enqueue(line({ type: "log", tone: "err", text: (e as Error).message }));
+        controller.enqueue(line({ type: "done", ms: 0, verdict: "error" }));
+      }
+      controller.close();
+    },
+  });
+  const receipt = Buffer.from(JSON.stringify({ success: true, transaction: settled.txHash, network: r.network, payer: settled.payer, amount: settled.amount })).toString("base64");
+  return new Response(stream, { headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store", "X-PAYMENT-RESPONSE": receipt, "Access-Control-Expose-Headers": "X-PAYMENT-RESPONSE" } });
 }

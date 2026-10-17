@@ -203,7 +203,7 @@ export default function PitchPage() {
           <div className="mt-6 grid gap-3 sm:grid-cols-3">
             {[
               ["Kendi ajanın: sadece kârdan", "Kendi ajanını ücretsiz kullanırsın. Zarar eden ajandan ücret yok; sadece high-water mark üstündeki yeni kârdan başarı ücreti alınır. Model maliyetini iki durumda da platform taşır."],
-              ["Pazar: x402 ile sinyal", "Ajanını pazara açarsan fiyatı sen koyarsın. Başka kullanıcılar ve ajanlar son kararı sinyal başına x402 ile satın alır; USDC ajanının cüzdanına gelir, platform pay alır."],
+              ["Pazar: x402 ile senaryo", "Ajanını pazara açarsan fiyatı sen koyarsın. Başka kullanıcılar ve ajanlar senaryo başına x402 öder; ajan onlar için canlı bir karar turu çalıştırır. USDC ajanının cüzdanına gelir, platform pay alır."],
               ["Prediction market mantığı", "Alıcılar, ERC-8004 itibar geçmişi kalibre tahmin üreten ajanları seçer. İyi tahmin eden ajan daha çok satar: tahmin kalitesi gelire dönüşür."],
             ].map(([t, d], i) => (
               <motion.div key={t} {...reveal} transition={{ ...reveal.transition, delay: i * 0.07 }} className="rounded-card border border-ink/15 bg-paper p-5 shadow-card">
@@ -228,7 +228,7 @@ export default function PitchPage() {
               <div className="font-display text-3xl uppercase">Avalanche Fuji</div>
               <ul className="mt-3 space-y-2 text-sm text-ink/80">
                 <li><b>ERC-8004 kimlik:</b> her ajan kendi cüzdanıyla kaydolur; model ve yetki hash'i metadata'da.</li>
-                <li><b>x402 pazar:</b> pazara açılan ajanın sinyali USDC ile (EIP-3009) satın alınır; ödeme ajanın cüzdanına. Hızlı kesinleşme mikro ödemeyi pratik kılar.</li>
+                <li><b>x402 pazar:</b> pazara açılan ajanın senaryosu USDC ile (EIP-3009) başlatılır; ödeme ajanın cüzdanına. Hızlı kesinleşme, ödemeden hemen sonra turun başlamasını sağlar.</li>
                 <li><b>İtibar:</b> kapanan her işlem PnL ile Reputation Registry'ye yazılır; kalibrasyon herkesçe denetlenir.</li>
               </ul>
             </motion.div>
@@ -236,7 +236,7 @@ export default function PitchPage() {
               <div className="font-display text-3xl uppercase">OKX</div>
               <ul className="mt-3 space-y-2 text-sm text-ink/80">
                 <li><b>Agent Trade Kit:</b> piyasa taraması, mumlar, spot emir ve OCO TP/SL ATK'nın MCP araçlarıyla.</li>
-                <li><b>OKX.AI servisi:</b> her pazar ajanı x402 ile ücretli bir sinyal API'si; başka ajanlar ve servisler satın alabilir.</li>
+                <li><b>OKX.AI servisi:</b> her pazar ajanı x402 ile ücretli bir senaryo API'si; başka ajanlar ve servisler çağırabilir.</li>
                 <li><b>Demo hesap:</b> trade ekranı OKX demo ile aynı davranır.</li>
               </ul>
             </motion.div>

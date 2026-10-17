@@ -21,7 +21,8 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 const ORDER = ["direction", "size", "leverage", "tp", "sl", "gate"] as const;
 
 export default function AgentPage() {
-  const { s, run, follow } = useAgent();
+  const { s, run, runStream, follow } = useAgent();
+  const [scenario, setScenario] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const { data: fleet, reload } = usePoll<FleetAgentView[]>("/api/fleet", 3000);
   const agents = fleet ?? [];
@@ -73,7 +74,7 @@ export default function AgentPage() {
             <LaunchWizard onLaunched={(id) => { if (!selected) { setSelected(id); follow(id); } reload(); }} />
             <div className="mt-3 text-center">
               <button
-                onClick={() => { setSelected(null); follow(null); run({ execute: false, universe: 6, pace: 1 }); }}
+                onClick={() => { setScenario(null); setSelected(null); follow(null); run({ execute: false, universe: 6, pace: 1 }); }}
                 disabled={s.running}
                 className="text-sm font-semibold text-muted underline-offset-4 hover:text-ink hover:underline disabled:opacity-50"
               >
@@ -103,7 +104,7 @@ export default function AgentPage() {
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <AnimatePresence>
                 {agents.map((a) => (
-                  <AgentCard key={a.id} a={a} selected={a.id === selected} onSelect={() => { setSelected(a.id); follow(a.id); }} />
+                  <AgentCard key={a.id} a={a} selected={a.id === selected} onSelect={() => { setScenario(null); setSelected(a.id); follow(a.id); }} />
                 ))}
               </AnimatePresence>
             </div>
@@ -111,10 +112,21 @@ export default function AgentPage() {
         </section>
       )}
 
-      {agents.some((a) => a.chain?.status === "registered") && <Market agents={agents} />}
+      {agents.some((a) => a.chain?.status === "registered") && (
+        <Market
+          agents={agents}
+          onScenario={async (name, start) => {
+            setSelected(null);
+            setScenario(name);
+            document.getElementById("stage")?.scrollIntoView({ behavior: "smooth" });
+            await runStream(start, 1);
+            reload();
+          }}
+        />
+      )}
 
       {/* STAGE */}
-      <section className="stage bg-stage text-white">
+      <section id="stage" className="stage bg-stage text-white">
         <div className="mx-auto max-w-[1440px] space-y-4 px-3 py-6 sm:px-6 sm:py-8">
           <div className="rounded-card border border-white/10 bg-white/[0.02] px-4 py-5">
             <PipelineRail s={s} />
@@ -125,7 +137,7 @@ export default function AgentPage() {
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_340px]">
             <div className="rounded-card border border-white/10 bg-black/40 p-2">
               <div className="flex items-center justify-between px-3 pt-2">
-                <h2 className="font-display text-xl tracking-wide">{current ? `${current.name} · olasılık alanı` : "Olasılık alanı"}</h2>
+                <h2 className="font-display text-xl tracking-wide">{current ? `${current.name} · olasılık alanı` : scenario ? `Senaryo · ${scenario}` : "Olasılık alanı"}</h2>
                 <span className="font-mono text-[10px] text-white/40">{s.providers ? `JEV ${s.providers.jev === "shadow" ? "shadow" : s.jevModel} · LAYA ${s.providers.laya === "endpoint" ? "laya (yerel)" : s.providers.laya}` : "hazır"}</span>
               </div>
               <div className="aspect-square w-full">

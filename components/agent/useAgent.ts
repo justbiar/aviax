@@ -140,18 +140,26 @@ export function useAgent() {
   const abortRef = useRef<AbortController | null>(null);
   /** Per-agent stage snapshots, so switching between agents is instant and never mixes runs. */
   const cache = useRef(new Map<string, Snapshot>());
+  const [followId, setFollowId] = useState<string | null>(null);
 
   const apply = useCallback((ev: AgentEvent) => setS((p) => reduce(p, ev)), []);
 
-  const run = useCallback(
-    async (opts: { execute: boolean; universe: number; pace: number }) => {
+  /** Plays any NDJSON agent stream on the stage (trial runs, paid marketplace scenarios). */
+  const runStream = useCallback(
+    async (start: (signal: AbortSignal) => Promise<Response>, pace = 1) => {
       abortRef.current?.abort();
       const ac = new AbortController();
       abortRef.current = ac;
+      setFollowId(null);
       setS({ ...initial(), running: true, startedAt: Date.now() });
+      const opts = { pace };
       try {
-        const res = await fetch("/api/agent", { method: "POST", body: JSON.stringify(opts), signal: ac.signal, headers: { "Content-Type": "application/json" } });
-        const reader = res.body!.getReader();
+        const res = await start(ac.signal);
+        if (!res.ok || !res.body) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error((j as { error?: string }).error || `HTTP ${res.status}`);
+        }
+        const reader = res.body.getReader();
         const dec = new TextDecoder();
         let buf = "";
         for (;;) {
@@ -175,16 +183,22 @@ export function useAgent() {
       } catch (e) {
         if ((e as Error).name !== "AbortError") apply({ type: "log", tone: "err", text: (e as Error).message });
         setS((p) => ({ ...p, running: false }));
+        throw e;
       }
     },
     [apply],
+  );
+
+  const run = useCallback(
+    (opts: { execute: boolean; universe: number; pace: number }) =>
+      runStream((signal) => fetch("/api/agent", { method: "POST", body: JSON.stringify(opts), signal, headers: { "Content-Type": "application/json" } }), opts.pace).catch(() => null),
+    [runStream],
   );
 
   /**
    * Follow a fleet agent. On attach the agent's latest run is rebuilt instantly from
    * its event log (or restored from cache); only events that arrive afterwards animate.
    */
-  const [followId, setFollowId] = useState<string | null>(null);
   useEffect(() => {
     if (!followId) return;
     abortRef.current?.abort();
@@ -260,5 +274,5 @@ export function useAgent() {
     };
   }, [followId]);
 
-  return { s, run, followId, follow: setFollowId };
+  return { s, run, runStream, followId, follow: setFollowId };
 }

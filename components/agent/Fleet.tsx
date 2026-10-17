@@ -316,7 +316,7 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
           ) : (
             <button
               onClick={() => {
-                const v = prompt("Sinyal başına fiyat (USDC)", "0.01");
+                const v = prompt("Senaryo başına fiyat (USDC)", "0.01");
                 if (v !== null) fetch(`/api/fleet/${a.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "list", priceUsdc: Number(v) }) });
               }}
               className="min-h-[36px] rounded-btn bg-sun px-3 text-xs font-bold"

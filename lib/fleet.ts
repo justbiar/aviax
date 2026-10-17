@@ -311,7 +311,7 @@ export function setListing(id: string, enabled: boolean, priceUsdc?: number) {
   if (enabled && a.chain.status !== "registered") throw new Error("Pazara açmak için ajan önce Fuji'de ERC-8004 kimliği almalı");
   a.listing.enabled = enabled;
   if (priceUsdc !== undefined) a.listing.priceUsdc = Math.min(10, Math.max(0.001, priceUsdc));
-  chainLog(a, "info", enabled ? `Pazara açıldı: sinyal başına ${a.listing.priceUsdc} USDC (x402)` : "Pazardan çekildi");
+  chainLog(a, "info", enabled ? `Pazara açıldı: senaryo başına ${a.listing.priceUsdc} USDC (x402)` : "Pazardan çekildi");
   save();
 }
 
