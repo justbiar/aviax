@@ -229,7 +229,7 @@ export default function PitchPage() {
           <motion.div {...reveal} className="mt-6 grid gap-3 md:grid-cols-3">
             {[
               ["Oylama geçmişi", "Her turda her modelin oyu, ortak karar, kural kontrolü ve sonraki turdaki portföy değeri kayıtlı."],
-              ["Model karnesi", "Kural doğruluğu: modelin \"ihlal var\" cevabı ölçülen ihlalle ne sıklıkla örtüşüyor. Hangi modele güveneceğini veri seçer."],
+              ["Model karnesi", "Kural doğruluğu (modelin \"ihlal var\" cevabı ölçülen ihlalle örtüşüyor mu): 137 turda strands-decider %100, laya %64. Kime güveneceğini veri seçer."],
               ["Gerçek sınır", "OKX TR, OKB'yi uyum kuralı nedeniyle işleme kapatıyor; masa reddedilen pariteyi hatırlayıp planı diğer varlıklarla kuruyor."],
             ].map(([t, d], i) => (
               <motion.div key={t} {...reveal} transition={{ ...reveal.transition, delay: i * 0.06 }} className="rounded-card border border-white/10 p-4">
@@ -300,9 +300,10 @@ export default function PitchPage() {
             <motion.div {...reveal} className="rounded-card border-2 border-ink bg-paper p-5 shadow-brut">
               <div className="font-display text-3xl uppercase">Avalanche Fuji</div>
               <ul className="mt-3 space-y-2 text-sm text-ink/80">
-                <li><b>ERC-8004 kimlik:</b> her ajan kendi cüzdanıyla kaydolur; model ve yetki hash'i metadata'da.</li>
-                <li><b>x402 pazar:</b> pazara açılan ajanın senaryosu USDC ile (EIP-3009) başlatılır; ödeme ajanın cüzdanına. Hızlı kesinleşme, ödemeden hemen sonra turun başlamasını sağlar.</li>
-                <li><b>İtibar:</b> kapanan her işlem PnL ile Reputation Registry'ye yazılır; kalibrasyon herkesçe denetlenir.</li>
+                <li><b>ERC-8004 kimlik:</b> her ajan kendi cüzdanıyla kaydolur; model, şirket ve yetki hash'i metadata'da. Risk masası <a className="font-mono underline" href="https://testnet.snowtrace.io/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/271" target="_blank" rel="noreferrer">#271</a>, trade ajanı <a className="font-mono underline" href="https://testnet.snowtrace.io/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/260" target="_blank" rel="noreferrer">#260</a>.</li>
+                <li><b>Kararlar zincirde:</b> uygulanan her karar, masanın kendi cüzdanıyla #271'in metadata'sına yazılır (hash, aksiyon, OKX emir no). Bugün 5 karar.</li>
+                <li><b>x402:</b> ilk gerçek ödeme 0,01 USDC (EIP-3009), Fuji'de settle: <a className="font-mono underline" href="https://testnet.snowtrace.io/tx/0x0526443c950f970ec47c997e4846311d2914a4d3dd135c001c30d54b24f0caae" target="_blank" rel="noreferrer">0x0526…caae</a>. Ödemeden hemen sonra ajan alıcı için canlı tur çalıştırır.</li>
+                <li><b>İtibar:</b> kapanan her işlem PnL ile Reputation Registry'ye yazılır.</li>
               </ul>
             </motion.div>
             <motion.div {...reveal} className="rounded-card border-2 border-ink bg-paper p-5 shadow-brut">
@@ -337,7 +338,16 @@ export default function PitchPage() {
               Trade ekranı
             </Link>
           </motion.div>
-          <motion.div {...reveal} className="mx-auto mt-12 max-w-[900px] text-left">
+          <motion.div {...reveal} className="mx-auto mt-10 inline-flex flex-wrap items-center justify-center gap-6 rounded-card border border-white/15 bg-white/[0.04] p-5 text-left">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/qr-aviax.svg" alt="aviax.pages.dev QR kodu" width={150} height={150} className="rounded-lg bg-white p-2" />
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-widest text-white/50">Telefonla deneyin</div>
+              <div className="mt-1 font-display text-4xl tracking-wide text-sun">aviax.pages.dev</div>
+              <p className="mt-1 max-w-[320px] text-sm text-white/65">&quot;Demoya geç&quot; ile hazır şirket hesabı; risk masası canlı karar verir, stres butonlarıyla çöküşü deneyin.</p>
+            </div>
+          </motion.div>
+          <motion.div {...reveal} className="mx-auto mt-10 max-w-[900px] text-left">
             <LlmVsDecision dark />
           </motion.div>
         </div>
