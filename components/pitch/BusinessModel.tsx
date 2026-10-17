@@ -67,10 +67,10 @@ export function BusinessModel() {
         <Slider label="Tur aralığı" value={intervalMin} min={1} max={60} step={1} fmt={(v) => `${v} dk`} onChange={setIntervalMin} />
         <Slider label="Model maliyeti (tur başına, platform öder)" value={cost} min={0} max={0.005} step={0.0001} fmt={(v) => usd(v, 4)} onChange={setCost} />
         <Slider label="Benimsemenin sıfırlandığı ücret (F)" value={F} min={20} max={60} step={1} fmt={(v) => `%${v}`} onChange={setF} />
-        <div className="pt-2 text-xs font-bold uppercase tracking-wider text-muted">Pazar (x402 senaryo satışı)</div>
-        <Slider label="Senaryo fiyatı" value={signalPrice} min={0.001} max={0.1} step={0.001} fmt={(v) => `${v.toFixed(3)} USDC`} onChange={setSignalPrice} />
-        <Slider label="Aylık senaryo sayısı" value={buyers} min={0} max={10000} step={100} fmt={(v) => v.toLocaleString("tr-TR")} onChange={setBuyers} />
-        <Slider label="Platform payı" value={take} min={0} max={30} step={1} fmt={(v) => `%${v}`} onChange={setTake} />
+        <div className="pt-2 text-xs font-bold uppercase tracking-wider text-muted">Agentic HR (kiralama + hizmet, x402)</div>
+        <Slider label="Kiralama / hizmet fiyatı" value={signalPrice} min={0.001} max={0.1} step={0.001} fmt={(v) => `${v.toFixed(3)} USDC`} onChange={setSignalPrice} />
+        <Slider label="Aylık kiralama + hizmet sayısı" value={buyers} min={0} max={10000} step={100} fmt={(v) => v.toLocaleString("tr-TR")} onChange={setBuyers} />
+        <Slider label="Platform komisyonu" value={take} min={0} max={30} step={1} fmt={(v) => `%${v}`} onChange={setTake} />
       </div>
 
       <div className="space-y-3">
@@ -88,8 +88,8 @@ export function BusinessModel() {
             ["Başa baş ücret", `%${(m.breakEven * 100).toFixed(1)}`],
             ["Platform net (kendi ajanlar)", usd(m.ownPlatform)],
             ["Kullanıcının net beklenen getirisi", usd(m.userNet)],
-            ["Sahibin senaryo geliri (x402)", usd(m.ownerSignalIncome)],
-            ["Platform payı (pazar)", usd(m.marketPlatform)],
+            ["Ajan sahibinin geliri (x402)", usd(m.ownerSignalIncome)],
+            ["Platform komisyonu (Agentic HR)", usd(m.marketPlatform)],
           ].map(([k, v]) => (
             <div key={k} className="rounded-card border border-ink/15 bg-paper p-3 shadow-card">
               <div className="text-[11px] font-semibold text-muted">{k}</div>

@@ -10,7 +10,7 @@ const LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 const LOCAL_ONLY = [/^\/api\/wallet/, /^\/api\/signal\/[^/]+\/agentic/];
 const BOT = /bot|crawl|spider|slurp|scrap|curl|wget|python|httpx|aiohttp|go-http|java\/|okhttp|axios|node-fetch|undici|libwww|postman|insomnia|headless|phantom|selenium|puppeteer|playwright|facebookexternalhit|embedly|preview|monitor|uptime/i;
 // Paid agent endpoints (x402) are meant for programmatic callers.
-const AGENT_OK = [/^\/api\/company\/decision\//];
+const AGENT_OK = [/^\/api\/company\/decision\//, /^\/api\/a2mcp\//];
 
 export function middleware(req: NextRequest) {
   const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "";

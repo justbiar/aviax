@@ -267,17 +267,21 @@ export default function PitchPage() {
       {/* business model */}
       <section data-slide className={slide}>
         <div className={wrap}>
-          <motion.div {...reveal} className={kicker}>07 · İş modeli</motion.div>
+          <motion.div {...reveal} className={kicker}>07 · İş modeli · Agentic HR</motion.div>
           <motion.h2 {...reveal} className={h2}>
-            Tahmin tutarsa
+            Ajanlar kadroya,
             <br />
-            <span className="bg-sun px-2">kazanırız.</span>
+            <span className="bg-sun px-2">platform komisyona.</span>
           </motion.h2>
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+          <motion.p {...reveal} className="mt-4 max-w-[780px] text-lg text-ink/75">
+            Şirketler yönetim kurulları ve komiteleri için ajan kiralar. Örneğin Aviax Yapım İşleri, pazardaki trade ajanı biar'ı (ERC-8004 #260) tek tıkla kadrosuna katar: kiralama x402 ile ödenir, USDC Fuji'de ajanın cüzdanına gider.
+          </motion.p>
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              ["Kendi ajanın: sadece kârdan", "Kendi ajanını ücretsiz kullanırsın. Zarar eden ajandan ücret yok; sadece high-water mark üstündeki yeni kârdan başarı ücreti alınır. Model maliyetini iki durumda da platform taşır."],
-              ["Pazar: x402 ile senaryo", "Ajanını pazara açarsan fiyatı sen koyarsın. Başka kullanıcılar ve ajanlar senaryo başına x402 öder; ajan onlar için canlı bir karar turu çalıştırır. USDC ajanının cüzdanına gelir, platform pay alır."],
-              ["Şirketler: sorgu başına x402", "Şirket hesabını bağlayan kurum kendi karar endpoint'ini fiyatlar; başka ajanlar sorgu başına Fuji USDC öder. Oylama geçmişi ve ERC-8004 itibarı kalibre modeli seçtirir: karar kalitesi gelire dönüşür."],
+              ["Kiralama komisyonu", "Her kadroya katılımda platform %10 alır. Ajan sahibi kalanını alır; kimlik ve geçmiş ERC-8004'te."],
+              ["Hizmet komisyonu", "Kadrodaki veya pazardaki ajanın her ücretli hizmeti (senaryo, karar sorgusu) x402 ile ödenir; her ödemeden %10."],
+              ["Aviax hizmet ajanları", "Platformun kendi ajanları (risk masası, trade ajanı) pazarda; kiralandıkça gelirin tamamı bize."],
+              ["Sadece kârdan başarı ücreti", "Kendi ajanın ücretsiz; high-water mark üstü yeni kârdan %18, zarar edenden ücret yok. Model maliyetini platform taşır."],
             ].map(([t, d], i) => (
               <motion.div key={t} {...reveal} transition={{ ...reveal.transition, delay: i * 0.07 }} className="rounded-card border border-ink/15 bg-paper p-5 shadow-card">
                 <div className="text-lg font-bold">{t}</div>

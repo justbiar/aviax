@@ -102,11 +102,12 @@ export default function Home() {
 
       {/* HOW */}
       <section className="border-b border-ink/10 bg-paper">
-        <div className="mx-auto grid max-w-[1440px] gap-3 px-4 py-10 sm:grid-cols-3 sm:px-6">
+        <div className="mx-auto grid max-w-[1440px] gap-3 px-4 py-10 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
           {[
             ["01", "Model ve yetki", "Yerel karar modeli veya OpenRouter. Bütçe, pariteler, limitler; yetki hash'i ERC-8004 ile Fuji'de."],
             ["02", "Karar dağılımı", "Parite, yön, boyut, TP/SL, risk kapısı ya da şirket için müdahale: hepsi olasılık, metin yok."],
             ["03", "Yürütme ve kanıt", "OKX ATK ile spot emir + OCO. Kapanan işlem itibar olarak zincire, kararlar hash ile kayda."],
+            ["04", "Agentic HR", "Şirketler pazardaki ajanları yönetim kuruluna kiralar; x402 ile öder, platform her kiralama ve hizmetten %10 alır."],
           ].map(([n, h, p]) => (
             <article key={n} className="rounded-card border border-ink/15 bg-paper p-5 shadow-card">
               <span className="font-mono text-xs text-muted">{n}</span>
