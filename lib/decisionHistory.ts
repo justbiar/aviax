@@ -38,6 +38,8 @@ export type HistoryEntry = {
   /** what happened to the decision: executed on OKX demo, waiting for a human, advice only, cooldown, none */
   execution: string;
   executedUsd: number;
+  /** Fuji tx that wrote this decision into the desk's ERC-8004 metadata, when anchored */
+  anchorTx?: string | null;
   votes: Vote[];
 };
 
@@ -123,6 +125,7 @@ export function recordRound(key: string, events: RiskEvent[]) {
     approval: r.approval.required,
     execution: r.execution?.status ?? "none",
     executedUsd: exec?.fills.filter((f) => f.ok).reduce((t, f) => t + f.usd, 0) ?? 0,
+    anchorTx: (events.find((e) => e.type === "anchor") as Extract<RiskEvent, { type: "anchor" }> | undefined)?.tx ?? null,
     votes,
   };
   const s = store();

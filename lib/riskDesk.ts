@@ -5,6 +5,8 @@ import { getBalance, getInstrument, hasOkxKeys, isDemo, placeOrder, roundLot } f
 import type { OkxCredentials } from "./companySession";
 import { ask, recordHash, route, type LayerAnswer, type Seats } from "./decisionLayer";
 import { decide, type Question } from "./decide";
+import { anchorDecision } from "./chain";
+import { deskSigner } from "./fleet";
 
 /**
  * Risk desk: the worked example of the decision layer.
@@ -49,6 +51,7 @@ export type RiskEvent =
   | { type: "models"; state: string; answers: Record<string, LayerAnswer>; models: { seat: string; modelId: string; source: string; latencyMs: number; error?: string }[]; reviewers: ReviewerOpinion[] }
   | { type: "decision"; record: DecisionRecord }
   | { type: "execution"; status: Execution["status"]; fills: Fill[]; text: string }
+  | { type: "anchor"; agentId: string; key: string; tx: string | null; error?: string }
   | { type: "error"; text: string }
   | { type: "done" };
 
@@ -382,6 +385,27 @@ export async function* runRiskDesk(opts: { source: Source; shock: Shock; policy:
     // Cool down only after something actually reached OKX; failed rounds retry next tick.
     execState.set(execKey, ok.length ? Date.now() : prevExec);
     yield { type: "execution", status: "executed", fills, text: `${ok.length}/${fills.length} emir OKX demo'ya gönderildi · ${Math.round(ok.reduce((t, f) => t + f.usd, 0)).toLocaleString("tr-TR")} USD stable'a` };
+
+    // 8. Anchor the executed decision in the desk's ERC-8004 identity on Fuji (only real fills).
+    const signer = ok.length ? deskSigner(companyName) : null;
+    if (signer) {
+      const key = `decision:${hash.slice(2, 12)}`;
+      try {
+        const tx = await anchorDecision(signer.pk, signer.agentId, key, {
+          hash,
+          ts,
+          verdict,
+          confidence: Number(verdictConfidence.toFixed(3)),
+          action: a.action.pick,
+          soldUsd: Math.round(ok.reduce((t, f) => t + f.usd, 0)),
+          orders: ok.map((f) => ({ instId: f.instId, qty: f.qty, ordId: f.ordId })),
+          models: res.models.map((m) => m.modelId),
+        });
+        yield { type: "anchor", agentId: signer.agentId, key, tx };
+      } catch (e) {
+        yield { type: "anchor", agentId: signer.agentId, key, tx: null, error: (e as Error).message.slice(0, 160) };
+      }
+    }
   } else if (execution.status === "cooldown") {
     yield { type: "execution", status: "cooldown", fills: [], text: "Önceki emirlerin bakiyeye yansıması bekleniyor, bu tur uygulanmadı" };
   }

@@ -54,6 +54,7 @@ export function RiskStage({ events, busy, lastScan, monitoring }: { events: Risk
   const decision = find("decision");
   const route = find("route");
   const exec = find("execution");
+  const anchor = find("anchor");
   const status = decision?.record.execution?.status;
   const seen = new Set(events.filter((e) => e.type === "stage").map((e) => (e as { stage: string }).stage));
   const chartAsset = portfolio?.holdings.find((h) => !h.reserve)?.ccy;
@@ -254,6 +255,12 @@ export function RiskStage({ events, busy, lastScan, monitoring }: { events: Risk
               </h3>
               <ul className="mt-2 space-y-1 font-mono text-[11px] text-white/70">
                 {exec && <li className="text-[rgb(0,200,120)]">· {exec.text}</li>}
+                {anchor?.tx && (
+                  <li>
+                    · karar zincirde: ERC-8004 #{anchor.agentId} ·{" "}
+                    <a href={`https://testnet.snowtrace.io/tx/${anchor.tx}`} target="_blank" rel="noreferrer" className="text-sun underline-offset-2 hover:underline">Snowtrace ↗</a>
+                  </li>
+                )}
                 {decision.record.approval.reasons.length ? decision.record.approval.reasons.map((r) => <li key={r}>· {r}</li>) : <li>· modeller anlaştı, güven yeterli, karar kuralla uyumlu</li>}
                 {status === "advice" && <li>· otonom yürütme kapalı veya hesap OKX demo değil</li>}
                 <li>· model ↔ kural kontrolü: {decision.record.modelRuleMatch ? "uyumlu" : "çelişkili"}</li>
@@ -358,6 +365,7 @@ function Terminal({ events }: { events: RiskEvent[] }) {
       for (const f of e.fills) lines.push({ t: f.ok ? `SAT ${f.qty} ${f.ccy} · ordId ${f.ordId}` : `${f.ccy}: ${f.error}`, tone: f.ok ? "text-[rgb(0,200,120)]" : "text-[rgb(255,80,80)]", tool: "spot_place_order" });
       lines.push({ t: e.text, tone: e.status === "executed" ? "text-[rgb(0,200,120)]" : "text-white/60", tool: "yürütme" });
     }
+    if (e.type === "anchor") lines.push({ t: e.tx ? `ERC-8004 #${e.agentId} · ${e.key} · ${e.tx.slice(0, 18)}…` : `zincire yazılamadı: ${e.error}`, tone: e.tx ? "text-sun" : "text-orange-300", tool: "setMetadata" });
     if (e.type === "error") lines.push({ t: e.text, tone: "text-[rgb(255,80,80)]", tool: "hata" });
   }
   useEffect(() => {

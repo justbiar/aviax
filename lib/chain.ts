@@ -123,6 +123,23 @@ export async function registerAgent(agentPk: Hex, card: Record<string, unknown>,
   return { hash, agentId };
 }
 
+/**
+ * The agent anchors one of its own decisions in its ERC-8004 identity: setMetadata(agentId,
+ * "decision:<id>", json) from the agent's wallet (only the owner can write its metadata).
+ * The value carries the record hash, so anyone can check the off-chain record against it.
+ */
+export async function anchorDecision(agentPk: Hex, agentId: string, key: string, value: Record<string, unknown>) {
+  const hash = await walletFor(agentPk).writeContract({
+    address: FUJI.identity,
+    abi: IDENTITY_ABI,
+    functionName: "setMetadata",
+    args: [BigInt(agentId), key, toHex(JSON.stringify(value))],
+    gas: 600_000n,
+  });
+  await confirm(hash);
+  return hash;
+}
+
 /** Operator (as client) records a closed trade on the ERC-8004 Reputation Registry. */
 export async function giveFeedback(agentId: string, pnlPct: number, instId: string, detail: Record<string, unknown>) {
   const uri = `data:application/json;base64,${Buffer.from(JSON.stringify(detail)).toString("base64")}`;

@@ -21,6 +21,8 @@ export default function DecisionPage() {
   const [monitoring, setMonitoring] = useState(true);
   /** Autonomous execution: undisputed model decisions are applied on the OKX demo account. */
   const [autonomous, setAutonomous] = useState(true);
+  /** Stress test: an instant market shock on top of live prices. Never executes orders or enters history. */
+  const [shock, setShock] = useState<Shock>("none");
   /** The company's risk desk identity on Avalanche Fuji (ERC-8004), when registered. */
   const [deskId, setDeskId] = useState<string | null>(null);
   useEffect(() => {
@@ -54,7 +56,7 @@ export default function DecisionPage() {
     let skipped = false;
     setBusy(true); setError("");
     try {
-      const res = await fetch("/api/risk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "okx" satisfies Source, shock: "none" satisfies Shock, policy, companyName, reviewers, execute: autonomous }) });
+      const res = await fetch("/api/risk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "okx" satisfies Source, shock, policy, companyName, reviewers, execute: autonomous }) });
       // Too-soon or busy turns are skipped quietly; the next 10 s tick runs again.
       if (res.status === 429) { skipped = true; return; }
       if (!res.ok || !res.body) throw new Error((await res.json()).error ?? "İstek başarısız");
@@ -67,7 +69,7 @@ export default function DecisionPage() {
       }
     } catch (e) { setError(e instanceof Error ? e.message : "Risk analizi başarısız"); }
     finally { setBusy(false); runLock.current = false; if (!skipped) setLastScan(Date.now()); }
-  }, [companyName, policy, reviewers, autonomous]);
+  }, [companyName, policy, reviewers, autonomous, shock]);
   const runRef = useRef(run);
   useEffect(() => { runRef.current = run; }, [run]);
   useEffect(() => {
@@ -91,7 +93,25 @@ export default function DecisionPage() {
     const start = arr.slice(0, i).reduce((sum, item) => sum + item.weight, 0) * 3.6;
     return `${chartColors[i % chartColors.length]} ${start}deg ${start + h.weight * 3.6}deg`;
   }).join(", ")})` : undefined;
-  if (accountReady && !companyConnected) return <main className="mx-auto max-w-[1440px] px-4 py-8 sm:px-6"><div className="mx-auto max-w-5xl rounded-card border-2 border-ink bg-white p-7 shadow-brut sm:p-10"><p className="font-mono text-xs uppercase tracking-[.18em] text-ink/50">OKX AI · ŞİRKET HAZİNESİ</p><h1 className="mt-3 font-display text-5xl">KENDİ ŞİRKET HESABINI BAĞLA</h1><p className="mt-4 max-w-2xl text-ink/65">Canlı analiz senin OKX demo portföyünü kullanır. Aviax demo hesabı ortak kullanılmaz. Şirket kurulumunu, Fuji cüzdanını ve karar motorunu hazırlamak için önce onboarding'i tamamla.</p><div className="mt-6 flex flex-wrap gap-3"><button onClick={() => { void startDemo().then(() => window.location.reload()).catch((e: Error) => setError(e.message)); }} className="inline-flex rounded-btn border-2 border-ink bg-sun px-5 py-3 font-bold shadow-btn">Demoya geç →</button><Link href="/company" className="inline-flex rounded-btn border-2 border-ink bg-paper px-5 py-3 font-bold">Kendi şirketini bağla →</Link></div>{error && <p className="mt-3 text-sm text-short">{error}</p>}</div><DecisionPreview /></main>;
+  if (accountReady && !companyConnected) return <main>
+    <section className="paper-grid border-b border-ink/10">
+      <div className="mx-auto max-w-[1100px] px-4 pb-12 pt-12 text-center sm:pt-16">
+        <span className="inline-flex items-center gap-2 rounded-full border border-ink/15 bg-paper px-3 py-1.5 text-xs font-bold shadow-btn"><span className="h-2 w-2 rounded-full bg-sun" /> Decision layer · OKX AI · risk masası</span>
+        <h1 className="mt-5 font-display text-[44px] uppercase leading-[0.95] tracking-tight sm:text-7xl">
+          Portföyü LLM yorumlamaz.<br />
+          <span className="relative inline-block"><span className="relative z-10">Karar modelleri ölçer.</span><span className="absolute inset-x-[-6px] bottom-1 z-0 h-[38%] bg-sun" /></span>
+        </h1>
+        <p className="mx-auto mt-5 max-w-[680px] text-lg font-medium text-ink/75 sm:text-xl">Şirket hazinesini canlı izleyen risk masası: limitleri kod ölçer, müdahale kararını iki karar modeli verir ve politika içindeyse OKX demo hesabında kendisi uygular.</p>
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <button onClick={() => { void startDemo().then(() => window.location.reload()).catch((e: Error) => setError(e.message)); }} className="rounded-btn border-2 border-ink bg-sun px-6 py-3 text-lg font-bold shadow-btn transition-transform duration-150 hover:-translate-y-px">Demoya geç →</button>
+          <Link href="/company" className="rounded-btn border-2 border-ink bg-paper px-6 py-3 text-lg font-bold shadow-btn transition-transform duration-150 hover:-translate-y-px">Kendi şirketini bağla →</Link>
+        </div>
+        <p className="mt-3 text-xs text-muted">Demo: hazır OKX demo şirket hesabı (Aviax Yapım İşleri LTD ŞTİ). Anahtarlar sunucuda kalır, tarayıcıya gitmez.</p>
+        {error && <p className="mt-3 text-sm text-short">{error}</p>}
+      </div>
+    </section>
+    <RiskStage events={[]} busy={false} lastScan={null} monitoring={false} />
+  </main>;
   const primaryModel = models?.type === "models" ? models.models.find((m) => m.seat === "primary") : undefined;
   return <main>
     {/* HERO */}
@@ -120,6 +140,13 @@ export default function DecisionPage() {
               <button onClick={() => setAutonomous((x) => !x)} className={`min-h-[40px] rounded-btn border px-3 text-xs font-bold ${autonomous ? "border-ink bg-ink text-sun" : "border-ink/20 text-ink/60"}`} title="Tartışmasız model kararları OKX demo hesabında uygulanır">{autonomous ? "OTONOM YÜRÜTME AÇIK" : "SADECE ÖNERİ"}</button>
               <button onClick={() => void run()} disabled={busy} className="min-h-[40px] rounded-btn border-2 border-ink bg-sun px-4 text-sm font-bold shadow-btn disabled:opacity-50">{busy ? "Tur çalışıyor…" : "Şimdi değerlendir"}</button>
             </div>
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-ink/55">Senaryo</span>
+            {([["none", "Canlı piyasa"], ["market10", "Kripto -%10"], ["crash40", "Çöküş: BTC -%40"]] as [Shock, string][]).map(([k, t]) => (
+              <button key={k} onClick={() => { setShock(k); setEvents([]); }} className={`min-h-[34px] rounded-btn border px-3 text-xs font-bold ${shock === k ? (k === "none" ? "border-ink bg-ink text-paper" : "border-short bg-short text-white") : "border-ink/20 text-ink/70 hover:bg-ink/5"}`}>{t}</button>
+            ))}
+            {shock !== "none" && <span className="font-mono text-[11px] text-short">stres testi · emir gönderilmez, geçmişe yazılmaz</span>}
           </div>
           <div className="mt-4 text-xs font-bold uppercase tracking-wider text-ink/55">Risk politikası (yetki)</div>
           <div className="mt-2 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">{([["maxWeight", "Varlık üst sınırı %"], ["maxDrawdown", "Maks. düşüş %"], ["minReserve", "Min. rezerv %"], ["maxVol", "Maks. oynaklık %"], ["approvalUsd", "Tur başına otonom işlem $"]] as [keyof Policy, string][]).map(([key, title]) => <label key={key} className="text-[11px] font-semibold text-ink/60">{title}<input type="number" min={0} value={policy[key]} onChange={(e) => setPolicy((p) => ({ ...p, [key]: Number(e.target.value) }))} className={input} /></label>)}</div>

@@ -117,6 +117,11 @@ export function VoteHistory({ refreshKey }: { refreshKey: number | null }) {
                       <span className={delta === null ? "text-white/35" : delta >= 0 ? "text-[rgb(0,200,120)]" : "text-[rgb(255,80,80)]"}>{delta === null ? "son tur" : `${delta >= 0 ? "+" : ""}${delta.toFixed(3)}%`}</span>
                       <span className={e.execution === "executed" ? "font-bold text-[rgb(0,200,120)]" : e.approval ? "text-orange-300" : "text-white/45"}>
                         {e.execution === "executed" ? `uygulandı · ${usd(e.executedUsd)}` : e.approval ? "insan onayı" : e.execution === "cooldown" ? "yansıma bekleniyor" : e.orders ? "öneri" : "emir yok"}
+                        {e.anchorTx && (
+                          <a href={`https://testnet.snowtrace.io/tx/${e.anchorTx}`} target="_blank" rel="noreferrer" onClick={(ev) => ev.stopPropagation()} className="ml-1 text-sun underline-offset-2 hover:underline">
+                            · Fuji ↗
+                          </a>
+                        )}
                       </span>
                     </button>
                     {isOpen && (

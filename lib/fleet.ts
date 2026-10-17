@@ -373,6 +373,13 @@ export function recordSale(id: string, buyer: string, amount: number, tx: string
 
 export const getAgent = (id: string) => store.agents.get(id) ?? null;
 
+/** The registered risk desk identity of a company, used by the desk to anchor its decisions. Server-only. */
+export function deskSigner(companyName: string) {
+  ensureFleet();
+  const a = [...store.agents.values()].find((x) => x.decisionOnly && x.companyName === companyName && x.chain.status === "registered" && x.chain.agentId);
+  return a ? { agentId: a.chain.agentId!, pk: a.walletPk as Hex, name: a.name } : null;
+}
+
 export async function retryLaunch(id: string) {
   const a = store.agents.get(id);
   if (!a || a.chain.status === "registered") return;
