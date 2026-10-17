@@ -78,14 +78,14 @@ async function confirm(hash: Hex) {
 
 /** Operator sends gas money (AVAX) to an agent wallet. */
 export async function fundAvax(to: Hex, avax: string) {
-  const hash = await operatorWallet().sendTransaction({ to, value: parseEther(avax) });
+  const hash = await operatorWallet().sendTransaction({ to, value: parseEther(avax), gas: 21_000n });
   await confirm(hash);
   return hash;
 }
 
 /** Operator sends USDC to an agent wallet for x402 payments. */
 export async function fundUsdc(to: Hex, usdc: number) {
-  const hash = await operatorWallet().writeContract({ address: FUJI.usdc, abi: USDC_ABI, functionName: "transfer", args: [to, BigInt(Math.round(usdc * 1e6))] });
+  const hash = await operatorWallet().writeContract({ address: FUJI.usdc, abi: USDC_ABI, functionName: "transfer", args: [to, BigInt(Math.round(usdc * 1e6))], gas: 120_000n });
   await confirm(hash);
   return hash;
 }
@@ -132,6 +132,7 @@ export async function giveFeedback(agentId: string, pnlPct: number, instId: stri
     functionName: "giveFeedback",
     // value = PnL % with 2 decimals, e.g. 1.25% -> 125
     args: [BigInt(agentId), BigInt(Math.round(pnlPct * 100)), 2, "trade", instId, "aviax/spot", uri, keccak256(toHex(JSON.stringify(detail)))],
+    gas: 1_500_000n,
   });
   await confirm(hash);
   return hash;

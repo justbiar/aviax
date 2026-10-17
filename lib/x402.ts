@@ -107,6 +107,8 @@ export async function verifyAndSettle(header: string, r: PaymentRequirements) {
     abi: USDC_ABI,
     functionName: "transferWithAuthorization",
     args: [a.from, a.to, BigInt(a.value), BigInt(a.validAfter), BigInt(a.validBefore), a.nonce, Number(v ?? BigInt(27 + (yParity ?? 0))), sr, s],
+    // Explicit limit: the fallback Fuji RPC returns absurd gas estimates that the node rejects.
+    gas: 200_000n,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
   if (receipt.status !== "success") throw new Error(`settlement reverted: ${hash}`);
