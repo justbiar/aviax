@@ -4,9 +4,6 @@ import { getCompanySession, getCompanySessionId } from "@/lib/companySession";
 
 export const runtime = "nodejs";
 
-const limits = globalThis as typeof globalThis & { __riskRequestAt?: Map<string, number>; __riskActivePublic?: number };
-limits.__riskRequestAt ??= new Map();
-limits.__riskActivePublic ??= 0;
 
 export async function POST(req: NextRequest) {
   let body: { source?: Source; shock?: Shock; policy?: Policy; companyName?: string; request?: string; reviewers?: string[] };
@@ -31,18 +28,6 @@ export async function POST(req: NextRequest) {
       ? { primary: companySession.modelSpec ?? "ollama:strands-decider", second: companySession.secondModelSpec ?? "" }
       : undefined;
   const activeReviewers = companySession?.model === "local" ? [] : reviewers;
-  let publicClient = "";
-  if (isPublic) {
-    // Per browser session, not per IP: a jury on one venue Wi-Fi shares a single public IP.
-    publicClient = sessionId ?? req.headers.get("cf-connecting-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "public";
-    const now = Date.now();
-    const last = limits.__riskRequestAt!.get(publicClient) ?? 0;
-    if (now - last < 5_000) return Response.json({ error: "Şirket risk taraması en az 5 saniyede bir başlatılabilir", retry: true }, { status: 429 });
-    if (limits.__riskActivePublic! >= 6) return Response.json({ error: "Canlı demo şu an meşgul, birkaç saniye sonra yeniden deneyin", retry: true }, { status: 429 });
-    for (const [ip, at] of limits.__riskRequestAt!) if (now - at > 60_000) limits.__riskRequestAt!.delete(ip);
-    limits.__riskRequestAt!.set(publicClient, now);
-    limits.__riskActivePublic!++;
-  }
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
@@ -52,7 +37,6 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(`${JSON.stringify({ type: "error", text: e instanceof Error ? e.message : "Risk analizi başarısız" })}\n`));
       } finally {
         controller.close();
-        if (isPublic) limits.__riskActivePublic = Math.max(0, limits.__riskActivePublic! - 1);
       }
     },
   });
