@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import { DEFAULT_POLICY, runRiskDesk, type Policy, type Shock, type Source } from "@/lib/riskDesk";
-import { getCompanySession, getCompanySessionId } from "@/lib/companySession";
+import { getCompanySession, getCompanySessionId, historyKey } from "@/lib/companySession";
+import { recordRound } from "@/lib/decisionHistory";
+import type { RiskEvent } from "@/lib/riskDesk";
 
 export const runtime = "nodejs";
 
@@ -31,8 +33,13 @@ export async function POST(req: NextRequest) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      const round: RiskEvent[] = [];
       try {
-        for await (const event of runRiskDesk({ source, shock, policy, companyName, request: body.request?.trim() || undefined, reviewers: activeReviewers, ...(companySession ? { okxCredentials: companySession.okx, openrouterKey: companySession.openrouterKey, seats } : {}) })) controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        for await (const event of runRiskDesk({ source, shock, policy, companyName, request: body.request?.trim() || undefined, reviewers: activeReviewers, ...(companySession ? { okxCredentials: companySession.okx, openrouterKey: companySession.openrouterKey, seats } : {}) })) {
+          if (event.type !== "stage") round.push(event);
+          controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+        }
+        if (source === "okx" && shock === "none") recordRound(historyKey(companySession), round);
       } catch (e) {
         controller.enqueue(encoder.encode(`${JSON.stringify({ type: "error", text: e instanceof Error ? e.message : "Risk analizi başarısız" })}\n`));
       } finally {

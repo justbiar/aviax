@@ -63,3 +63,6 @@ export function updateCompanySession(id: string | undefined, patch: Partial<Pick
   Object.assign(session, patch);
   return session;
 }
+
+/** History key: the shared jury demo, a connected company, or the localhost owner. */
+export const historyKey = (session?: CompanySession) => (session ? (session.demo ? "demo" : `company:${session.publicId}`) : "owner");

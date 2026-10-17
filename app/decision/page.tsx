@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import type { Policy, RiskEvent, Source, Shock } from "@/lib/riskDesk";
 import { CandleChart } from "@/components/trade/CandleChart";
 import { RiskStage } from "@/components/decision/RiskStage";
+import { VoteHistory } from "@/components/decision/VoteHistory";
 import { startDemo } from "@/components/DemoGate";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
@@ -124,6 +125,7 @@ export default function DecisionPage() {
     </section>
 
     <RiskStage events={events} busy={busy} lastScan={lastScan} monitoring={monitoring} />
+    <VoteHistory refreshKey={lastScan} />
 
     {/* INTEGRATION */}
     <section className="border-t border-ink/10 bg-paper">
