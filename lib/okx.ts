@@ -85,14 +85,22 @@ export type Position = { instId: string; posSide: string; pos: string; avgPx: st
 export const getPositions = () => request<Position[]>("GET", "/api/v5/account/positions", { auth: true, query: { instType: "SWAP" } });
 
 export type Order = { ordId: string; instId: string; side: string; ordType: string; px: string; sz: string; accFillSz: string; state: string; cTime: string; avgPx: string; lever: string };
-export const getOpenOrders = () => request<Order[]>("GET", "/api/v5/trade/orders-pending", { auth: true, query: { instType: "SWAP" } });
-export const getOrderHistory = () => request<Order[]>("GET", "/api/v5/trade/orders-history", { auth: true, query: { instType: "SWAP", limit: 30 } });
+export const getOpenOrders = () => request<Order[]>("GET", "/api/v5/trade/orders-pending", { auth: true, query: { instType: "SPOT" } });
+export const getOrderHistory = () => request<Order[]>("GET", "/api/v5/trade/orders-history", { auth: true, query: { instType: "SPOT", limit: 30 } });
+
+export const getOrder = async (instId: string, ordId: string) =>
+  (await request<(Order & { fee: string; feeCcy: string; fillPx: string })[]>("GET", "/api/v5/trade/order", { auth: true, query: { instId, ordId } }))[0];
 
 export const getAlgoOrders = () =>
   request<{ algoId: string; instId: string; tpTriggerPx: string; slTriggerPx: string; sz: string; side: string; state: string }[]>("GET", "/api/v5/trade/orders-algo-pending", {
     auth: true,
-    query: { ordType: "oco,conditional", instType: "SWAP" },
+    query: { ordType: "oco,conditional", instType: "SPOT" },
   });
+
+export type AlgoOrder = { algoId: string; instId: string; state: string; actualPx: string; actualSide: string; actualSz: string; tpTriggerPx: string; slTriggerPx: string; sz: string };
+/** state: live | effective (triggered) | canceled | order_failed | partially_effective */
+export const getAlgoOrder = async (algoId: string) => (await request<AlgoOrder[]>("GET", "/api/v5/trade/order-algo", { auth: true, query: { algoId } }))[0];
+export const cancelAlgo = (instId: string, algoId: string) => request("POST", "/api/v5/trade/cancel-algos", { auth: true, body: [{ instId, algoId }] });
 
 export const getAccountConfig = async () =>
   (await request<{ posMode: "net_mode" | "long_short_mode"; acctLv: string }[]>("GET", "/api/v5/account/config", { auth: true }))[0];
@@ -104,9 +112,10 @@ export type PlaceOrderInput = {
   instId: string;
   side: "buy" | "sell";
   ordType: "market" | "limit";
-  sz: string; // contracts
+  sz: string; // spot: base amount, or quote amount when tgtCcy=quote_ccy
   px?: string;
-  tdMode?: "cross" | "isolated";
+  tdMode?: "cash" | "cross" | "isolated";
+  tgtCcy?: "base_ccy" | "quote_ccy";
   reduceOnly?: boolean;
   posSide?: "long" | "short";
   tpTriggerPx?: string;
@@ -122,7 +131,8 @@ export async function placeOrder(o: PlaceOrderInput) {
     auth: true,
     body: {
       instId: o.instId,
-      tdMode: o.tdMode ?? "cross",
+      tdMode: o.tdMode ?? "cash",
+      tgtCcy: o.tgtCcy,
       side: o.side,
       posSide: o.posSide,
       ordType: o.ordType,
@@ -163,3 +173,11 @@ export const getPositionsHistory = (instId: string) =>
     "/api/v5/account/positions-history",
     { auth: true, query: { instType: "SWAP", instId, limit: 10 } },
   );
+
+/** Rounds a base amount down to the instrument's lot size (spot). */
+export async function roundLot(instId: string, qty: number) {
+  const inst = await getInstrument(instId);
+  const lot = Number(inst.lotSz);
+  const decimals = (inst.lotSz.split(".")[1] ?? "").length;
+  return (Math.floor(qty / lot + 1e-9) * lot).toFixed(decimals);
+}

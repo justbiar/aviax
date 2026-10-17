@@ -6,11 +6,11 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams;
   const kind = p.get("kind");
-  const instId = p.get("instId") ?? "BTC-USDT-SWAP";
+  const instId = p.get("instId") ?? "BTC-USDT";
   try {
     switch (kind) {
       case "tickers":
-        return NextResponse.json(await getTickers("SWAP"));
+        return NextResponse.json(await getTickers("SPOT"));
       case "ticker":
         return NextResponse.json(await getTicker(instId));
       case "candles":

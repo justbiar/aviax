@@ -62,12 +62,13 @@ export function DecisionField({ s }: { s: AgentState }) {
     [n, span, s.pairs, s.workers, pairDec],
   );
 
-  const dir = dirDec ? { long: 0.6 * dirDec.jev.probabilities.long + 0.4 * dirDec.laya.probabilities.long, flat: 0.6 * dirDec.jev.probabilities.flat + 0.4 * dirDec.laya.probabilities.flat, short: 0.6 * dirDec.jev.probabilities.short + 0.4 * dirDec.laya.probabilities.short } : null;
+  const ens = (k: string) => (dirDec ? 0.6 * (dirDec.jev.probabilities[k] ?? 0) + 0.4 * (dirDec.laya.probabilities[k] ?? 0) : 0);
+  const dir = dirDec ? { long: ens("long"), flat: ens("flat"), short: ens("short") } : null;
   const gate = gateDec ? 0.6 * (gateDec.jev.value ?? 0) + 0.4 * (gateDec.laya.value ?? 0) : null;
 
   const center = (() => {
     if (s.plan && gate !== null) return { top: gateDec?.pick === "yes" ? "EXECUTE" : "HOLD", big: `${Math.round(gate * 100)}%`, sub: "p(EV > 0)" };
-    if (dirDec && dir) return { top: dirDec.pick.toUpperCase(), big: `${Math.round(Math.max(dir.long, dir.short, dir.flat) * 100)}%`, sub: "yön olasılığı" };
+    if (dirDec && dir) return { top: dirDec.pick === "long" ? "AL" : dirDec.pick === "flat" ? "BEKLE" : dirDec.pick.toUpperCase(), big: `${Math.round(Math.max(dir.long, dir.short, dir.flat) * 100)}%`, sub: "yön olasılığı" };
     if (pairDec && chosen) return { top: short(chosen), big: `${Math.round((0.6 * pairDec.jev.probabilities[chosen] + 0.4 * pairDec.laya.probabilities[chosen]) * 100)}%`, sub: "parite olasılığı" };
     if (s.running) return { top: s.current?.toUpperCase() ?? "BOOT", big: `${Object.keys(s.workers).length}/${s.pairs.length || "-"}`, sub: "worker" };
     return { top: "IDLE", big: "p(·)", sub: "dağılım bekleniyor" };
@@ -197,7 +198,7 @@ export function DecisionField({ s }: { s: AgentState }) {
                   <motion.path d={d} fill="none" stroke={col} strokeWidth={dirDec?.pick === k ? 10 : 5} strokeLinecap="round" initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.8, ease: EASE }} />
                   {dir[k] > 0.08 && (
                     <text x={tx} y={ty} textAnchor="middle" dominantBaseline="middle" fontSize={9} className="font-mono" fill={col}>
-                      {k[0].toUpperCase()} {(dir[k] * 100).toFixed(0)}
+                      {k === "long" ? "AL" : k === "flat" ? "BEKLE" : "S"} {(dir[k] * 100).toFixed(0)}
                     </text>
                   )}
                 </g>

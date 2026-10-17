@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { MODEL_OPTIONS, modelLabel } from "@/lib/models";
 import { fmtNum, fmtPx, short } from "@/lib/fmt";
 
-export type FleetTrade = { instId: string; side: "long" | "short"; entry: number; exit?: number; tp: number; sl: number; notional: number; leverage: number; margin: number; pnl?: number; reason?: string; openedAt: number; closedAt?: number };
+export type FleetTrade = { instId: string; side: "long"; qty?: string; entry: number; exit?: number; tp: number; sl: number; notional: number; leverage: number; margin: number; pnl?: number; reason?: string; openedAt: number; closedAt?: number };
 export type FleetAgentView = {
   id: string;
   name: string;
@@ -37,7 +37,6 @@ export function AgentForm({ onCreated }: { onCreated: (id: string) => void }) {
   const [model, setModel] = useState(MODEL_OPTIONS[0].value);
   const [budget, setBudget] = useState(200);
   const [intervalSec, setIntervalSec] = useState(300);
-  const [maxLeverage, setMaxLeverage] = useState(3);
   const [universe, setUniverse] = useState(6);
   const [maxHoldMin, setMaxHoldMin] = useState(240);
   const [adv, setAdv] = useState(false);
@@ -53,7 +52,7 @@ export function AgentForm({ onCreated }: { onCreated: (id: string) => void }) {
       const r = await fetch("/api/fleet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name || `Ajan ${Math.floor(Math.random() * 90 + 10)}`, model, budget, intervalSec, maxLeverage, universe, maxHoldMin }),
+        body: JSON.stringify({ name: name || `Ajan ${Math.floor(Math.random() * 90 + 10)}`, model, budget, intervalSec, maxLeverage: 1, universe, maxHoldMin }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
@@ -102,7 +101,7 @@ export function AgentForm({ onCreated }: { onCreated: (id: string) => void }) {
       <AnimatePresence initial={false}>
         {adv && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3, ease: EASE }} className="overflow-hidden">
-            <div className="mt-4 grid gap-3 border-t border-ink/10 pt-4 sm:grid-cols-4">
+            <div className="mt-4 grid gap-3 border-t border-ink/10 pt-4 sm:grid-cols-3">
               <label>
                 <span className={label}>Tur aralığı</span>
                 <select className={field} value={intervalSec} onChange={(e) => setIntervalSec(Number(e.target.value))}>
@@ -110,12 +109,6 @@ export function AgentForm({ onCreated }: { onCreated: (id: string) => void }) {
                   <option value={300}>5 dakika</option>
                   <option value={900}>15 dakika</option>
                   <option value={3600}>1 saat</option>
-                </select>
-              </label>
-              <label>
-                <span className={label}>Maks. kaldıraç</span>
-                <select className={field} value={maxLeverage} onChange={(e) => setMaxLeverage(Number(e.target.value))}>
-                  {[1, 2, 3, 5].map((v) => <option key={v} value={v}>{v}x</option>)}
                 </select>
               </label>
               <label>
@@ -199,7 +192,7 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
 
       <div className="mt-4 flex items-end justify-between">
         <div>
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">Bakiye</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">Bakiye (USDT)</div>
           <div className="font-mono text-2xl font-bold num">{fmtNum(a.equity, 2)}</div>
         </div>
         <div className={`text-right font-mono text-sm font-bold num ${pnl >= 0 ? "text-long" : "text-short"}`}>
@@ -211,15 +204,15 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
         <motion.div className="h-full rounded-full bg-ink" animate={{ width: `${Math.min(100, (marginUsed / Math.max(1, a.budget)) * 100)}%` }} transition={{ duration: 0.6, ease: EASE }} />
       </div>
       <div className="mt-1 flex justify-between font-mono text-[10px] text-muted">
-        <span>teminat {fmtNum(marginUsed, 0)} / {fmtNum(a.budget, 0)}</span>
+        <span>kullanılan {fmtNum(marginUsed, 0)} / {fmtNum(a.budget, 0)}</span>
         <span>{a.trades.length} işlem · {wins} kâr</span>
       </div>
 
       <div className="mt-3 min-h-[52px] rounded-btn bg-ink/[0.04] px-3 py-2 font-mono text-xs">
         {a.position ? (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
-            <b className={a.position.side === "long" ? "text-long" : "text-short"}>{a.position.side.toUpperCase()} {short(a.position.instId)}</b>
-            <span>{a.position.leverage}x</span>
+            <b className="text-long">AL {short(a.position.instId)}</b>
+            <span>{Number(a.position.qty ?? 0).toString()} adet</span>
             <span className="text-muted">giriş {fmtPx(a.position.entry)}</span>
             <span className="text-long">TP {fmtPx(a.position.tp)}</span>
             <span className="text-short">SL {fmtPx(a.position.sl)}</span>
@@ -238,7 +231,7 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
         <div className="mt-2 space-y-0.5">
           {a.trades.slice(0, 3).map((t) => (
             <div key={t.openedAt} className="flex justify-between font-mono text-[11px]">
-              <span className="text-muted">{t.side === "long" ? "L" : "S"} {short(t.instId)} · {t.reason?.toUpperCase()}</span>
+              <span className="text-muted">{short(t.instId)} · {t.reason?.toUpperCase()}</span>
               <span className={(t.pnl ?? 0) >= 0 ? "text-long" : "text-short"}>{(t.pnl ?? 0) >= 0 ? "+" : ""}{fmtNum(t.pnl ?? 0, 2)}</span>
             </div>
           ))}

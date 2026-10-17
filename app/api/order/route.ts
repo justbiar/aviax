@@ -1,33 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cancelOrder, closePosition, getAccountConfig, notionalToContracts, placeOrder, setLeverage, getTicker } from "@/lib/okx";
+import { cancelOrder, getTicker, placeOrder, roundLot, roundToTick } from "@/lib/okx";
 
 export const dynamic = "force-dynamic";
 
-/** body: { action: "place" | "cancel" | "close" | "leverage", ... } */
+/**
+ * Spot orders. body: { action: "place" | "cancel", ... }
+ * place: { instId, side, ordType, notional (USDT), px?, tp?, sl? }
+ */
 export async function POST(req: NextRequest) {
   const b = await req.json();
   try {
     if (b.action === "cancel") return NextResponse.json(await cancelOrder(b.instId, b.ordId));
-    if (b.action === "close") return NextResponse.json(await closePosition(b.instId));
-    if (b.action === "leverage") return NextResponse.json(await setLeverage(b.instId, Number(b.lever)));
 
-    // place: size is given in USDT notional and converted to contracts
     const side: "buy" | "sell" = b.side;
-    const lever = Number(b.lever ?? 3);
-    const cfg = await getAccountConfig();
-    const hedge = cfg.posMode === "long_short_mode";
-    await setLeverage(b.instId, lever).catch(() => null);
-    const px = b.ordType === "limit" ? Number(b.px) : Number((await getTicker(b.instId)).last);
-    const sz = await notionalToContracts(b.instId, Number(b.notional), px);
+    const notional = Number(b.notional);
+    if (!(notional > 0)) throw new Error("Tutar girilmeli");
+    let sz: string;
+    let tgtCcy: "base_ccy" | "quote_ccy" | undefined;
+    let px: string | undefined;
+    if (b.ordType === "market") {
+      sz = String(notional);
+      tgtCcy = "quote_ccy";
+    } else {
+      px = await roundToTick(b.instId, Number(b.px || (await getTicker(b.instId)).last));
+      sz = await roundLot(b.instId, notional / Number(px));
+    }
     const res = await placeOrder({
       instId: b.instId,
       side,
       ordType: b.ordType,
       sz,
-      px: b.ordType === "limit" ? String(b.px) : undefined,
-      posSide: hedge ? (side === "buy" ? "long" : "short") : undefined,
-      tpTriggerPx: b.tp ? String(b.tp) : undefined,
-      slTriggerPx: b.sl ? String(b.sl) : undefined,
+      px,
+      tdMode: "cash",
+      tgtCcy,
+      // TP/SL can only protect a buy on spot.
+      tpTriggerPx: side === "buy" && b.tp ? String(b.tp) : undefined,
+      slTriggerPx: side === "buy" && b.sl ? String(b.sl) : undefined,
     });
     return NextResponse.json({ ok: true, sz, res });
   } catch (e) {

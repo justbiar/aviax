@@ -6,17 +6,17 @@ import { fmtNum, fmtPx, short } from "@/lib/fmt";
 export type Account = {
   configured: boolean;
   balance?: { totalEq: string; details: { ccy: string; eq: string; availBal: string; upl: string }[] } | null;
-  positions?: { instId: string; posSide: string; pos: string; avgPx: string; markPx: string; upl: string; uplRatio: string; lever: string; liqPx: string; notionalUsd: string }[];
+  assets?: { ccy: string; eq: string; availBal: string; eqUsd?: string; upl: string }[];
   orders?: { ordId: string; instId: string; side: string; ordType: string; px: string; sz: string; accFillSz: string; state: string; cTime: string }[];
   algos?: { algoId: string; instId: string; tpTriggerPx: string; slTriggerPx: string; sz: string; side: string; state: string }[];
   history?: { ordId: string; instId: string; side: string; ordType: string; avgPx: string; sz: string; state: string; cTime: string }[];
   errors?: string[];
 };
 
-const TABS = ["Pozisyonlar", "Açık emirler", "TP / SL", "Geçmiş"] as const;
+const TABS = ["Varlıklar", "Açık emirler", "TP / SL", "Geçmiş"] as const;
 
 export function AccountPanel({ acct, reload }: { acct: Account | null; reload: () => void }) {
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Pozisyonlar");
+  const [tab, setTab] = useState<(typeof TABS)[number]>("Varlıklar");
 
   const act = async (body: Record<string, string>) => {
     await fetch("/api/order", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -32,7 +32,7 @@ export function AccountPanel({ acct, reload }: { acct: Account | null; reload: (
     );
 
   const counts: Record<string, number> = {
-    Pozisyonlar: acct.positions?.length ?? 0,
+    Varlıklar: acct.assets?.length ?? 0,
     "Açık emirler": acct.orders?.length ?? 0,
     "TP / SL": acct.algos?.length ?? 0,
     Geçmiş: acct.history?.length ?? 0,
@@ -59,25 +59,18 @@ export function AccountPanel({ acct, reload }: { acct: Account | null; reload: (
       {acct.errors && acct.errors.length > 0 && <p className="bg-short/10 px-4 py-2 text-xs text-short">{acct.errors.join(" · ")}</p>}
       <div className="max-h-[280px] overflow-auto scroll-thin">
         <table className="w-full">
-          {tab === "Pozisyonlar" && (
+          {tab === "Varlıklar" && (
             <>
-              <thead><tr><th className={th}>Kontrat</th><th className={th}>Yön</th><th className={th}>Miktar</th><th className={th}>Giriş</th><th className={th}>Mark</th><th className={th}>Liq.</th><th className={th}>PnL</th><th className={th} /></tr></thead>
+              <thead><tr><th className={th}>Varlık</th><th className={th}>Toplam</th><th className={th}>Kullanılabilir</th><th className={th}>USD değeri</th></tr></thead>
               <tbody>
-                {acct.positions?.map((p) => {
-                  const long = p.posSide === "long" || (p.posSide === "net" && Number(p.pos) > 0);
-                  return (
-                    <tr key={p.instId + p.posSide} className="border-t border-ink/5">
-                      <td className={td}><b>{short(p.instId)}</b> <span className="text-muted">{p.lever}x</span></td>
-                      <td className={td}><span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${long ? "bg-long/10 text-long" : "bg-short/10 text-short"}`}>{long ? "LONG" : "SHORT"}</span></td>
-                      <td className={td}>{Math.abs(Number(p.pos))}</td>
-                      <td className={td}>{fmtPx(p.avgPx)}</td>
-                      <td className={td}>{fmtPx(p.markPx)}</td>
-                      <td className={td}>{fmtPx(p.liqPx)}</td>
-                      <td className={`${td} ${Number(p.upl) >= 0 ? "text-long" : "text-short"}`}>{fmtNum(p.upl)} ({(Number(p.uplRatio) * 100).toFixed(2)}%)</td>
-                      <td className={td}><button onClick={() => act({ action: "close", instId: p.instId })} className="rounded-md border border-ink/20 px-2 py-1 text-[11px] font-bold hover:bg-ink hover:text-paper">Kapat</button></td>
-                    </tr>
-                  );
-                })}
+                {acct.assets?.map((x) => (
+                  <tr key={x.ccy} className="border-t border-ink/5">
+                    <td className={td}><b>{x.ccy}</b></td>
+                    <td className={td}>{fmtNum(x.eq, x.ccy === "USDT" || x.ccy === "TRY" ? 2 : 6)}</td>
+                    <td className={td}>{fmtNum(x.availBal, x.ccy === "USDT" || x.ccy === "TRY" ? 2 : 6)}</td>
+                    <td className={`${td} text-muted`}>{x.eqUsd ? fmtNum(x.eqUsd, 2) : "-"}</td>
+                  </tr>
+                ))}
               </tbody>
             </>
           )}

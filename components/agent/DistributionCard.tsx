@@ -10,7 +10,8 @@ export function DistributionCard({ d, index }: { d: DecisionEv; index: number })
   const labels = Object.keys(d.jev.probabilities);
   const ens = Object.fromEntries(labels.map((k) => [k, 0.6 * d.jev.probabilities[k] + 0.4 * (d.laya.probabilities[k] ?? 0)]));
   const pickLabel = d.key === "size" || d.key === "leverage" ? labels.reduce((b, k) => (ens[k] > ens[b] ? k : b), labels[0]) : d.pick;
-  const nice = (k: string) => d.labels?.[k] ?? (k.length > 14 ? k.replace("-USDT-SWAP", "") : k);
+  const NICE: Record<string, string> = { long: "AL", flat: "BEKLE", short: "SAT" };
+  const nice = (k: string) => d.labels?.[k] ?? NICE[k] ?? k.replace("-USDT-SWAP", "").replace("-USDT", "");
   const conf = Math.max(...Object.values(ens));
 
   return (
@@ -26,7 +27,7 @@ export function DistributionCard({ d, index }: { d: DecisionEv; index: number })
           <div className="font-display text-lg tracking-wide text-white">{d.title}</div>
         </div>
         <div className="text-right">
-          <div className="font-display text-xl text-sun">{d.key === "gate" ? (d.pick === "yes" ? "GEÇTİ" : "RED") : d.key === "pair" ? nice(d.pick) : d.key === "tp" || d.key === "sl" ? nice(d.pick) : d.pick.toUpperCase()}</div>
+          <div className="font-display text-xl text-sun">{d.key === "gate" ? (d.pick === "yes" ? "GEÇTİ" : "RED") : d.key === "pair" ? nice(d.pick) : d.key === "tp" || d.key === "sl" || d.key === "direction" ? nice(d.pick) : d.pick.toUpperCase()}</div>
           <div className="font-mono text-[10px] text-white/45">ensemble {(conf * 100).toFixed(0)}%</div>
         </div>
       </div>

@@ -15,9 +15,8 @@ const reveal = {
 
 const DECISIONS = [
   { q: "Hangi parite?", type: "choice", out: "N pariteye dağılım", ex: "SOL 34% · ETH 18% · AVAX 14%" },
-  { q: "Hangi yön?", type: "choice", out: "long / short / flat", ex: "L 66% · F 23% · S 11%" },
-  { q: "Ne kadar?", type: "score", out: "5 seviyeli ölçek", ex: "Medium (2.4 / 4)" },
-  { q: "Kaç kaldıraç?", type: "score", out: "1x · 2x · 3x · 5x", ex: "3x (55%)" },
+  { q: "Şimdi alınır mı?", type: "choice", out: "al / USDT'de bekle", ex: "AL 66% · BEKLE 34%" },
+  { q: "Ne kadar?", type: "score", out: "bütçenin 5 seviyesi", ex: "Medium (2.4 / 4)" },
   { q: "TP / SL nerede?", type: "choice", out: "ATR katlarına dağılım", ex: "TP 2 ATR · SL 1 ATR" },
   { q: "İşleme girilsin mi?", type: "noul", out: "p(EV > 0)", ex: "0.71 → EXECUTE" },
 ];
@@ -28,7 +27,7 @@ const FLOW = [
   { k: "JEV ∥ LAYA", d: "paralel worker, pair başına 2 forward pass", c: "bg-sun" },
   { k: "Ensemble", d: "0.6 JEV + 0.4 LAYA", c: "bg-paper" },
   { k: "Risk kapısı", d: "noul ≥ 0.55 ve iki model hemfikir", c: "bg-paper" },
-  { k: "OKX ATK", d: "swap_place_order + ekli TP/SL", c: "bg-ink text-paper" },
+  { k: "OKX ATK", d: "spot_place_order + OCO TP/SL", c: "bg-ink text-paper" },
 ];
 
 export default function PitchPage() {
@@ -135,7 +134,7 @@ export default function PitchPage() {
       <section data-slide className={slide}>
         <div className={wrap}>
           <motion.div {...reveal} className={kicker}>03 · Nasıl çalışıyor</motion.div>
-          <motion.h2 {...reveal} className={h2}>Altı karar, altı dağılım.</motion.h2>
+          <motion.h2 {...reveal} className={h2}>Beş karar, beş dağılım.</motion.h2>
           <div className="mt-8 overflow-hidden rounded-card border border-ink/15 bg-paper shadow-card">
             {DECISIONS.map((d, i) => (
               <motion.div key={d.q} {...reveal} transition={{ ...reveal.transition, delay: i * 0.06 }} className="grid grid-cols-[1fr_auto] items-center gap-3 border-b border-ink/10 px-5 py-4 last:border-0 sm:grid-cols-[1.2fr_110px_1fr_1.2fr]">
@@ -178,9 +177,9 @@ export default function PitchPage() {
           <div className="mt-8 grid gap-3 sm:grid-cols-2">
             {[
               ["İki model hemfikir olmalı", "JEV ≥ 0.50 ve LAYA ≥ 0.45, ensemble ≥ 0.55. Aksi halde HOLD."],
-              ["Flat bir seçenek", "Model \"işlem yok\" diyebiliyor. Flat en olası sonuçsa agent bekliyor."],
-              ["Sabit risk tavanı", "Maks. notional ve maks. kaldıraç .env'den. Model bu tavanın içinde ölçekliyor."],
-              ["Her emir TP/SL ile", "ATK swap_place_order, TP ve SL ekli gönderiliyor. Çıplak pozisyon yok."],
+              ["Bekle bir seçenek", "Model \"işlem yok\" diyebiliyor. Bekle en olası sonuçsa ajan USDT'de kalıyor."],
+              ["Bütçe tavanı", "Her ajanın kendi USDT bütçesi var. Spot, kaldıraç yok; model alımı bütçenin içinde ölçekliyor."],
+              ["Her alım OCO ile", "Alımdan hemen sonra ATK ile TP ve SL içeren OCO satış emri. Korumasız pozisyon yok."],
             ].map(([t, d], i) => (
               <motion.div key={t} {...reveal} transition={{ ...reveal.transition, delay: i * 0.07 }} className="rounded-card border border-ink/15 bg-paper p-5 shadow-card">
                 <div className="text-lg font-bold">{t}</div>

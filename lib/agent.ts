@@ -1,7 +1,7 @@
 import { atkCall, atkData } from "./atk";
 import { decide as decideRaw, isLive, resolveSpec, type Answer, type DecisionResult, type ModelName, type ModelSpec, type Provider, type Question } from "./decide";
 import { computeFeatures, describe, parseCandles, type Features } from "./features";
-import { hasOkxKeys, notionalToContracts, roundToTick } from "./okx";
+import { getOrder, hasOkxKeys, roundLot, roundToTick } from "./okx";
 import { hasOpenRouter, narrate } from "./openrouter";
 
 export type Stage = "scan" | "features" | "workers" | "pair" | "direction" | "size" | "risk" | "gate" | "execute" | "monitor";
@@ -14,21 +14,22 @@ export type AgentEvent =
   | { type: "worker"; instId: string; jev: DecisionResult; laya: DecisionResult; edge: number }
   | { type: "decision"; key: "pair" | "direction" | "size" | "leverage" | "tp" | "sl" | "gate"; title: string; jev: Answer; laya: Answer; jevMs: number; layaMs: number; jevSrc: string; jevProvider: Provider; pick: string; labels?: Record<string, string> }
   | { type: "plan"; plan: Plan }
-  | { type: "order"; ok: boolean; detail: string; ordId?: string }
+  | { type: "order"; ok: boolean; detail: string; ordId?: string; algoId?: string; qty?: string; avgPx?: number }
   | { type: "narration"; text: string }
   | { type: "done"; ms: number; verdict: "executed" | "planned" | "hold" | "error" };
 
 export type Plan = {
   instId: string;
-  side: "long" | "short";
+  side: "long";
   entry: number;
   tp: number;
   sl: number;
   tpAtr: number;
   slAtr: number;
   notional: number;
+  /** Spot: base-currency quantity (estimated before the fill, exact after). */
   contracts: string;
-  leverage: number;
+  leverage: number; // always 1 on spot
   rr: number;
   confidence: number;
   gate: number;
@@ -37,11 +38,11 @@ export type Plan = {
 const SYS =
   "You are the narrator of an autonomous trading agent. Decision models (JEV, LAYA) return probability distributions, you only explain them. Write in Turkish, 2 to 3 short sentences, concrete numbers, no hype, no emojis, never use em dashes.";
 
-/** Crypto-native perps only (OKX also lists tokenised stocks as USDT swaps). */
+/** Crypto-native spot pairs only (OKX also lists tokenised stocks). */
 const CRYPTO = new Set("BTC ETH SOL XRP DOGE BNB ADA AVAX LINK SUI TON LTC ZEC PEPE TRX DOT BCH UNI NEAR APT ARB OP WIF HYPE ENA AAVE ETC FIL ATOM INJ TIA SEI WLD ONDO TRUMP SHIB XLM HBAR ICP RENDER FET PENGU BONK CRV LDO JUP PUMP".split(" "));
 
 const MAX_NOTIONAL = () => Number(process.env.AGENT_MAX_NOTIONAL_USDT || 500);
-const MAX_LEV = () => Number(process.env.AGENT_MAX_LEVERAGE || 5);
+const base = (instId: string) => instId.split("-")[0];
 const pct = (p: number) => `${(p * 100).toFixed(0)}%`;
 
 /** Average two distributions (ensemble), JEV weighted slightly higher. */
@@ -78,7 +79,6 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
     return r;
   };
   const provider = (m: ModelName) => resolveSpec(m, m === "jev" ? opts.model : undefined).prov;
-  const maxLev = Math.min(opts.maxLeverage ?? MAX_LEV(), MAX_LEV());
   const jevSpec = resolveSpec("jev", opts.model);
   const jevProv = jevSpec.prov;
   yield {
@@ -93,33 +93,30 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
 
   /* 1. SCAN ------------------------------------------------------------ */
   yield { type: "stage", stage: "scan", status: "start" };
-  yield { type: "log", tool: "market_get_tickers", text: "ATK → USDT perpetual evrenini tarıyor" };
+  yield { type: "log", tool: "market_get_tickers", text: "ATK → USDT spot piyasasını tarıyor" };
   type T = { instId: string; last: string; open24h: string; volCcy24h: string };
-  const tickers = atkData<T>(await atkCall("market_get_tickers", { instType: "SWAP" }));
+  const tickers = atkData<T>(await atkCall("market_get_tickers", { instType: "SPOT" }));
   const n = opts.universe ?? 6;
   const liquid = tickers
-    .filter((t) => t.instId.endsWith("-USDT-SWAP") && CRYPTO.has(t.instId.split("-")[0]) && !opts.exclude?.includes(t.instId))
-    .map((t) => ({ ...t, qv: Number(t.volCcy24h) * Number(t.last) }))
+    .filter((t) => t.instId.endsWith("-USDT") && CRYPTO.has(base(t.instId)) && !opts.exclude?.includes(t.instId))
+    // spot volCcy24h is already quoted in USDT
+    .map((t) => ({ ...t, qv: Number(t.volCcy24h) }))
     .sort((a, b) => b.qv - a.qv);
   // AVAX always competes: the agent is built for the Avalanche ecosystem.
-  const avax = liquid.find((t) => t.instId === "AVAX-USDT-SWAP");
+  const avax = liquid.find((t) => t.instId === "AVAX-USDT");
   const ranked = [...liquid.filter((t) => t !== avax).slice(0, avax ? n - 1 : n), ...(avax ? [avax] : [])];
-  yield { type: "log", tone: "ok", text: `${tickers.length} kontrat tarandı, hacme göre ilk ${n}: ${ranked.map((r) => r.instId.replace("-USDT-SWAP", "")).join(", ")}` };
+  yield { type: "log", tone: "ok", text: `${tickers.length} spot parite tarandı, hacme göre ilk ${n}: ${ranked.map((r) => base(r.instId)).join(", ")}` };
   yield { type: "stage", stage: "scan", status: "done" };
 
   /* 2. FEATURES -------------------------------------------------------- */
   yield { type: "stage", stage: "features", status: "start" };
   const pairs: Features[] = await Promise.all(
     ranked.map(async (t) => {
-      const [c, fr] = await Promise.all([
-        atkCall("market_get_candles", { instId: t.instId, bar: "1H", limit: 120 }),
-        atkCall("market_get_funding_rate", { instId: t.instId }).catch(() => null),
-      ]);
-      const funding = Number(atkData<{ fundingRate: string }>(fr)[0]?.fundingRate ?? 0) * 100;
-      return computeFeatures(t.instId, parseCandles(atkData<string[]>(c)), Number(t.open24h), funding);
+      const c = await atkCall("market_get_candles", { instId: t.instId, bar: "1H", limit: 120 });
+      return computeFeatures(t.instId, parseCandles(atkData<string[]>(c)), Number(t.open24h), 0);
     }),
   );
-  yield { type: "log", tool: "market_get_candles", text: `${pairs.length * 2} ATK çağrısı paralel: 1H mumlar + funding` };
+  yield { type: "log", tool: "market_get_candles", text: `${pairs.length} ATK çağrısı paralel: 1H mumlar` };
   yield { type: "universe", pairs };
   yield { type: "stage", stage: "features", status: "done" };
 
@@ -131,9 +128,9 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
   const workerQs = (x: Features): Record<string, Question> => ({
     direction: {
       type: "choice",
-      instructions: "Given this market state, which position has the best expected value over the next 4 hours?",
-      criteria: { long: "Open a long position", short: "Open a short position", flat: "Stay flat, no edge" },
-      prior: { long: 1.6 * x.signal, short: -1.6 * x.signal, flat: 0.35 - Math.abs(x.signal) },
+      instructions: "Spot only, no shorting. Does buying now have positive expected value over the next 4 hours, or is holding USDT better?",
+      criteria: { long: "Buy the asset now", flat: "Stay in USDT, no edge" },
+      prior: { long: 1.6 * x.signal, flat: 0.15 - 1.0 * x.signal },
     },
     quality: {
       type: "score",
@@ -147,12 +144,12 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
     if (provider(m) !== "openrouter") return Promise.all(pairs.map((x) => decide(m, describe(x), workerQs(x))));
     const qs: Record<string, Question> = {};
     for (const x of pairs) {
-      const tag = x.instId.replace("-USDT-SWAP", "");
+      const tag = base(x.instId);
       for (const [k, q] of Object.entries(workerQs(x))) qs[`${tag}__${k}`] = { ...q, instructions: `[${x.instId}] ${q.instructions}` };
     }
     const r = await decide(m, pairs.map(describe).join("\n"), qs);
     return pairs.map((x) => {
-      const tag = x.instId.replace("-USDT-SWAP", "");
+      const tag = base(x.instId);
       return { ...r, answers: { direction: r.answers[`${tag}__direction`], quality: r.answers[`${tag}__quality`] } };
     });
   };
@@ -162,7 +159,7 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
     const l = layaW[i];
     const dir = blend(j.answers.direction, l.answers.direction);
     const q = (0.6 * (j.answers.quality.score ?? 2) + 0.4 * (l.answers.quality.score ?? 2)) / 4;
-    const edge = Math.max(dir.long, dir.short) * (0.5 + q) - dir.flat * 0.5;
+    const edge = dir.long * (0.5 + q) - dir.flat * 0.5;
     return { x, j, l, edge };
   });
   const wErr = workers.find((w) => w.j.error)?.j.error;
@@ -170,7 +167,7 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
   for (const w of workers) {
     yield { type: "worker", instId: w.x.instId, jev: w.j, laya: w.l, edge: w.edge };
     const d = w.j.answers.direction.probabilities;
-    yield { type: "log", tone: "jev", text: `${w.x.instId.replace("-USDT-SWAP", "")} · JEV ${w.j.latencyMs}ms L ${pct(d.long)} S ${pct(d.short)} F ${pct(d.flat)} · LAYA ${w.l.latencyMs}ms` };
+    yield { type: "log", tone: "jev", text: `${base(w.x.instId)} · JEV ${w.j.latencyMs}ms AL ${pct(d.long)} BEKLE ${pct(d.flat)} · LAYA ${w.l.latencyMs}ms` };
   }
   yield { type: "stage", stage: "workers", status: "done" };
 
@@ -179,7 +176,7 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
   const criteria = Object.fromEntries(workers.map((w) => [w.x.instId, describe(w.x)]));
   const pairPrior = Object.fromEntries(workers.map((w) => [w.x.instId, w.edge * 3]));
   const pairQ: Record<string, Question> = { pair: { type: "choice", instructions: "Which instrument offers the best risk-adjusted opportunity right now?", criteria, prior: pairPrior } };
-  const universeState = `Candidate perpetuals ranked by 24h liquidity. ${workers.map((w) => describe(w.x)).join(" ")}`;
+  const universeState = `Candidate spot pairs (long only) ranked by 24h liquidity. ${workers.map((w) => describe(w.x)).join(" ")}`;
   const [pj, pl] = await Promise.all([decide("jev", universeState, pairQ), decide("laya", universeState, pairQ)]);
   const pairDist = blend(pj.answers.pair, pl.answers.pair);
   const [instId, pairP] = top(pairDist);
@@ -197,36 +194,30 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
   yield { type: "stage", stage: "direction", status: "done" };
 
   if (dirKey === "flat") {
-    yield { type: "log", tone: "warn", text: `En olası sonuç FLAT (${pct(dirP)}). Agent işlem açmıyor.` };
+    yield { type: "log", tone: "warn", text: `En olası sonuç BEKLE (${pct(dirP)}). Agent USDT'de kalıyor.` };
     for (const s of ["size", "risk", "gate", "execute"] as Stage[]) yield { type: "stage", stage: s, status: "skip" };
     const b = await brief;
     if (b) yield { type: "narration", text: b };
     yield { type: "done", ms: Date.now() - t0, verdict: "hold" };
     return;
   }
-  const side = dirKey as "long" | "short";
-  const state = describe(x) + ` Proposed side: ${side}. Model confidence ${pct(dirP)}.`;
+  const side = "long" as const;
+  const state = describe(x) + ` Proposed action: spot buy. Model confidence ${pct(dirP)}.`;
 
-  /* 6. SIZE + LEVERAGE ----------------------------------------------- */
+  /* 6. SIZE (spot: no leverage, the budget is the cap) ------------------ */
   yield { type: "stage", stage: "size", status: "start" };
   const sizeLevels = ["Minimal", "Small", "Medium", "Large", "Max"];
-  const levLevels = ["1x", "2x", "3x", "5x"];
-  const conf = (dirP - 0.33) / 0.67;
+  const conf = (dirP - 0.5) / 0.5;
   const sizeTarget = 4 * conf - Math.max(0, x.atrPct - 1) * 1.5;
-  const levTarget = 3 * conf - Math.max(0, x.atrPct - 0.8) * 2;
   const sizeQ: Record<string, Question> = {
-    size: { type: "score", instructions: "How much of the risk budget should this trade use?", criteria: sizeLevels, prior: sizeLevels.map((_, i) => -Math.abs(i - sizeTarget)) },
-    leverage: { type: "score", instructions: "What leverage is appropriate for this volatility?", criteria: levLevels, prior: levLevels.map((_, i) => -Math.abs(i - levTarget) * 1.2) },
+    size: { type: "score", instructions: "How much of the budget should this spot buy use?", criteria: sizeLevels, prior: sizeLevels.map((_, i) => -Math.abs(i - sizeTarget)) },
   };
   const [sj, sl] = await Promise.all([decide("jev", state, sizeQ), decide("laya", state, sizeQ)]);
   const sizeScore = 0.6 * (sj.answers.size.score ?? 1) + 0.4 * (sl.answers.size.score ?? 1);
-  const levScore = 0.6 * (sj.answers.leverage.score ?? 0) + 0.4 * (sl.answers.leverage.score ?? 0);
-  const leverage = Math.min(maxLev, [1, 2, 3, 5][Math.round(levScore)]);
-  const sizeFrac = 0.15 + 0.75 * (sizeScore / 4); // share of the budget committed as margin
-  // With a budget, the model sizes margin inside it; notional = margin x leverage.
-  const notional = opts.budget ? Math.max(5, Math.floor(opts.budget * sizeFrac * leverage)) : Math.round(MAX_NOTIONAL() * (0.15 + 0.85 * (sizeScore / 4)));
-  yield { type: "decision", key: "size", title: "Pozisyon boyutu", jev: sj.answers.size, laya: sl.answers.size, jevMs: sj.latencyMs, jevSrc: sj.modelId, jevProvider: sj.provider, layaMs: sl.latencyMs, pick: `${notional} USDT` };
-  yield { type: "decision", key: "leverage", title: "Kaldıraç", jev: sj.answers.leverage, laya: sl.answers.leverage, jevMs: sj.latencyMs, jevSrc: sj.modelId, jevProvider: sj.provider, layaMs: sl.latencyMs, pick: `${leverage}x` };
+  const leverage = 1;
+  const sizeFrac = 0.2 + 0.8 * (sizeScore / 4); // share of the budget spent on this buy
+  const notional = opts.budget ? Math.max(5, Math.floor(opts.budget * sizeFrac)) : Math.round(MAX_NOTIONAL() * sizeFrac);
+  yield { type: "decision", key: "size", title: "Alım tutarı", jev: sj.answers.size, laya: sl.answers.size, jevMs: sj.latencyMs, jevSrc: sj.modelId, jevProvider: sj.provider, layaMs: sl.latencyMs, pick: `${notional} USDT` };
   yield { type: "stage", stage: "size", status: "done" };
 
   /* 7. TP / SL as distributions over ATR multiples -------------------- */
@@ -278,7 +269,7 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
   yield { type: "decision", key: "gate", title: "Risk kapısı", jev: gj.answers.gate, laya: gl.answers.gate, jevMs: gj.latencyMs, jevSrc: gj.modelId, jevProvider: gj.provider, layaMs: gl.latencyMs, pick: pass ? "yes" : "no" };
   yield { type: "stage", stage: "gate", status: pass ? "done" : "fail", note: `p(EV>0)=${pct(gate)}` };
 
-  const contracts = await notionalToContracts(x.instId, notional, entry);
+  const contracts = await roundLot(x.instId, notional / entry);
   const plan: Plan = { instId: x.instId, side, entry, tp, sl: slPx, tpAtr, slAtr, notional, contracts, leverage, rr, confidence: dirP, gate };
   yield { type: "plan", plan };
 
@@ -300,31 +291,43 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
     return;
   }
   yield { type: "stage", stage: "execute", status: "start" };
+  const clOrdId = `${opts.tag ?? "aviax"}${Date.now()}`.replace(/[^a-zA-Z0-9]/g, "").slice(0, 32);
   try {
-    const cfg = atkData<{ posMode: string }>(await atkCall("account_get_config", {}))[0];
-    const hedge = cfg?.posMode === "long_short_mode";
-    yield { type: "log", tool: "swap_set_leverage", text: `ATK → kaldıraç ${leverage}x (cross)` };
-    await atkCall("swap_set_leverage", { instId: x.instId, lever: String(leverage), mgnMode: "cross", ...(hedge ? { posSide: side } : {}) }).catch(() => null);
-    yield { type: "log", tool: "swap_place_order", text: `ATK → ${side.toUpperCase()} ${contracts} kontrat market, TP ${tp} / SL ${slPx}` };
-    const r = await atkCall("swap_place_order", {
+    // 1. Market buy for a USDT amount.
+    yield { type: "log", tool: "spot_place_order", text: `ATK → ${base(x.instId)} spot market alım, ${notional} USDT` };
+    const r = await atkCall("spot_place_order", { instId: x.instId, tdMode: "cash", side: "buy", ordType: "market", sz: String(notional), tgtCcy: "quote_ccy", clOrdId });
+    const ord = okxResult(r);
+
+    // 2. Read the fill: real entry and the base amount actually received (fee is taken in base).
+    let fill = await getOrder(x.instId, ord.ordId).catch(() => null);
+    for (let i = 0; i < 5 && fill && fill.state !== "filled"; i++) {
+      await new Promise((res) => setTimeout(res, 400));
+      fill = await getOrder(x.instId, ord.ordId).catch(() => fill);
+    }
+    const avgPx = Number(fill?.avgPx || entry);
+    const feeBase = fill && fill.feeCcy === base(x.instId) ? Math.abs(Number(fill.fee)) : 0;
+    const qty = await roundLot(x.instId, Number(fill?.accFillSz || contracts) - feeBase);
+    plan.entry = avgPx;
+    plan.contracts = qty;
+    yield { type: "log", tone: "ok", text: `Alım doldu: ${qty} ${base(x.instId)} @ ${avgPx} (ordId ${ord.ordId})` };
+
+    // 3. Protect it: OCO sell with TP and SL for exactly that quantity.
+    yield { type: "log", tool: "spot_place_algo_order", text: `ATK → OCO satış: TP ${tp} / SL ${slPx}, ${qty} ${base(x.instId)}` };
+    const a = await atkCall("spot_place_algo_order", {
       instId: x.instId,
-      tdMode: "cross",
-      side: side === "long" ? "buy" : "sell",
-      ...(hedge ? { posSide: side } : {}),
-      ordType: "market",
-      sz: contracts,
+      tdMode: "cash",
+      side: "sell",
+      ordType: "oco",
+      sz: qty,
       tpTriggerPx: String(tp),
       tpOrdPx: "-1",
       slTriggerPx: String(slPx),
       slOrdPx: "-1",
-      clOrdId: `${opts.tag ?? "aviax"}${Date.now()}`.replace(/[^a-zA-Z0-9]/g, "").slice(0, 32),
+      algoClOrdId: `${clOrdId}o`.slice(0, 32),
     });
-    const rErr = r as { error?: boolean; code?: string; message?: string };
-    if (rErr?.error) throw new Error(rErr.code === "50124" ? "OKX API anahtarında işlem (Trade) yetkisi yok. Demo API anahtarını Trade izniyle yeniden oluştur." : `OKX ${rErr.code}: ${rErr.message}`);
-    const ord = atkData<{ ordId: string; sCode: string; sMsg: string }>(r)[0];
-    if (!ord || (ord.sCode && ord.sCode !== "0")) throw new Error(ord?.sMsg || JSON.stringify(r).slice(0, 200));
-    yield { type: "order", ok: true, detail: `${side.toUpperCase()} ${x.instId} · ${contracts} ct`, ordId: ord.ordId };
-    yield { type: "log", tone: "ok", text: `Emir dolduruldu: ordId ${ord.ordId}` };
+    const algo = okxResult(a) as unknown as { algoId: string };
+    yield { type: "order", ok: true, detail: `AL ${x.instId} · ${qty} ${base(x.instId)}`, ordId: ord.ordId, algoId: algo.algoId, qty, avgPx };
+    yield { type: "log", tone: "ok", text: `OCO aktif: algoId ${algo.algoId}` };
     yield { type: "stage", stage: "execute", status: "done" };
     yield* explain(plan, pairP);
     yield { type: "done", ms: Date.now() - t0, verdict: "executed" };
@@ -336,10 +339,24 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
   }
 }
 
+/** Unwraps an ATK order response or throws a readable error. */
+function okxResult(r: unknown): { ordId: string; sCode?: string; sMsg?: string } {
+  const err = r as { error?: boolean; code?: string; message?: string };
+  if (err?.error)
+    throw new Error(
+      err.code === "50123" || err.code === "50124"
+        ? `OKX ${err.code}: API anahtarının spot işlem izni yok. Demo API anahtarını Trade izniyle yeniden oluşturup .env.local'e yaz.`
+        : `OKX ${err.code}: ${err.message}`,
+    );
+  const d = atkData<{ ordId: string; algoId?: string; sCode?: string; sMsg?: string }>(r)[0];
+  if (!d || (d.sCode && d.sCode !== "0")) throw new Error(d?.sMsg || JSON.stringify(r).slice(0, 200));
+  return d;
+}
+
 async function* explain(plan: Plan, pairP: number): AsyncGenerator<AgentEvent> {
   const text = await narrate(
     SYS,
-    `Agent şu kararı verdi: ${plan.side} ${plan.instId}, giriş ${plan.entry}, TP ${plan.tp} (${plan.tpAtr} ATR), SL ${plan.sl} (${plan.slAtr} ATR), ${plan.notional} USDT, ${plan.leverage}x. Parite olasılığı ${pct(pairP)}, yön olasılığı ${pct(plan.confidence)}, risk kapısı p(EV>0) ${pct(plan.gate)}. Bu kararın gerekçesini açıkla.`,
+    `Agent şu spot kararı verdi: ${plan.instId} alım, giriş ${plan.entry}, TP ${plan.tp} (${plan.tpAtr} ATR), SL ${plan.sl} (${plan.slAtr} ATR), ${plan.notional} USDT. Parite olasılığı ${pct(pairP)}, yön olasılığı ${pct(plan.confidence)}, risk kapısı p(EV>0) ${pct(plan.gate)}. Bu kararın gerekçesini açıkla.`,
   );
   if (text) yield { type: "narration", text };
 }

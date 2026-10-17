@@ -13,7 +13,7 @@ type Ticker = { instId: string; last: string; open24h: string; high24h: string; 
 const card = "rounded-card border border-ink/15 bg-paper shadow-card";
 
 export default function TradePage() {
-  const [instId, setInstId] = useState("BTC-USDT-SWAP");
+  const [instId, setInstId] = useState("BTC-USDT");
   const [bookTab, setBookTab] = useState<"book" | "trades">("book");
   const [pickedPx, setPickedPx] = useState<string>();
   const [query, setQuery] = useState("");
@@ -23,8 +23,8 @@ export default function TradePage() {
   const list = useMemo(
     () =>
       (tickers ?? [])
-        .filter((t) => t.instId.endsWith("-USDT-SWAP"))
-        .map((t) => ({ ...t, qv: Number(t.volCcy24h) * Number(t.last), chg: (Number(t.last) / Number(t.open24h) - 1) * 100 }))
+        .filter((t) => t.instId.endsWith("-USDT"))
+        .map((t) => ({ ...t, qv: Number(t.volCcy24h), chg: (Number(t.last) / Number(t.open24h) - 1) * 100 }))
         .sort((a, b) => b.qv - a.qv)
         .slice(0, 40),
     [tickers],
@@ -34,7 +34,6 @@ export default function TradePage() {
 
   const overlays: Overlay[] = useMemo(() => {
     const o: Overlay[] = [];
-    acct?.positions?.filter((p) => p.instId === instId).forEach((p) => o.push({ price: Number(p.avgPx), color: "rgb(20,20,16)", title: "Giriş" }));
     acct?.algos?.filter((a) => a.instId === instId).forEach((a) => {
       if (a.tpTriggerPx) o.push({ price: Number(a.tpTriggerPx), color: "rgb(0,168,107)", title: "TP", dashed: true });
       if (a.slTriggerPx) o.push({ price: Number(a.slTriggerPx), color: "rgb(232,65,66)", title: "SL", dashed: true });
@@ -70,7 +69,7 @@ export default function TradePage() {
             <select value={instId} onChange={(e) => setInstId(e.target.value)} className="rounded-btn border border-ink/15 bg-paper px-2 py-1.5 font-display text-2xl tracking-wide lg:hidden" aria-label="Parite">
               {list.map((x) => <option key={x.instId} value={x.instId}>{short(x.instId)}</option>)}
             </select>
-            <h1 className="hidden font-display text-3xl tracking-wide lg:block">{short(instId)}<span className="text-ink/30">-USDT</span> <span className="align-middle font-sans text-xs font-bold text-muted">PERP</span></h1>
+            <h1 className="hidden font-display text-3xl tracking-wide lg:block">{short(instId)}<span className="text-ink/30">-USDT</span> <span className="align-middle font-sans text-xs font-bold text-muted">SPOT</span></h1>
             <Stat label="Son" value={fmtPx(last)} big tone={t && t.chg >= 0 ? "up" : "down"} />
             <Stat label="24s değişim" value={t ? fmtPct(t.chg) : "-"} tone={t && t.chg >= 0 ? "up" : "down"} />
             <Stat label="24s yüksek" value={fmtPx(t?.high24h)} />

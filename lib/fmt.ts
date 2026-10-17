@@ -10,4 +10,4 @@ export const fmtNum = (v: number | string | undefined, d = 2) => {
 };
 export const fmtPct = (v: number, d = 2) => `${v >= 0 ? "+" : ""}${v.toFixed(d)}%`;
 export const fmtCompact = (v: number) => Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(v);
-export const short = (instId: string) => instId.replace("-USDT-SWAP", "");
+export const short = (instId: string) => instId.replace("-USDT-SWAP", "").replace("-USDT", "");

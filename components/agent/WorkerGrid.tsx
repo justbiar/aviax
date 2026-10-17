@@ -21,9 +21,9 @@ function Stack({ p, label, color }: { p: Record<string, number>; label: string; 
     <div className="flex items-center gap-2">
       <span className={`w-9 font-mono text-[9px] font-bold ${color}`}>{label}</span>
       <div className="flex h-2.5 flex-1 overflow-hidden rounded-full bg-white/5">
-        <motion.div className="bg-[rgb(0,200,120)]" initial={{ width: 0 }} animate={{ width: `${p.long * 100}%` }} transition={{ duration: 0.7 }} />
-        <motion.div className="bg-white/25" initial={{ width: 0 }} animate={{ width: `${p.flat * 100}%` }} transition={{ duration: 0.7 }} />
-        <motion.div className="bg-[rgb(255,80,80)]" initial={{ width: 0 }} animate={{ width: `${p.short * 100}%` }} transition={{ duration: 0.7 }} />
+        <motion.div className="bg-[rgb(0,200,120)]" initial={{ width: 0 }} animate={{ width: `${(p.long ?? 0) * 100}%` }} transition={{ duration: 0.7 }} />
+        <motion.div className="bg-white/25" initial={{ width: 0 }} animate={{ width: `${(p.flat ?? 0) * 100}%` }} transition={{ duration: 0.7 }} />
+        <motion.div className="bg-[rgb(255,80,80)]" initial={{ width: 0 }} animate={{ width: `${(p.short ?? 0) * 100}%` }} transition={{ duration: 0.7 }} />
       </div>
     </div>
   );

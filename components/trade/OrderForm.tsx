@@ -7,7 +7,6 @@ export function OrderForm({ instId, last, presetPx, onPlaced }: { instId: string
   const [ordType, setOrdType] = useState<"market" | "limit">("market");
   const [px, setPx] = useState("");
   const [notional, setNotional] = useState(100);
-  const [lever, setLever] = useState(3);
   const [useTpSl, setUseTpSl] = useState(false);
   const [tp, setTp] = useState("");
   const [sl, setSl] = useState("");
@@ -33,11 +32,11 @@ export function OrderForm({ instId, last, presetPx, onPlaced }: { instId: string
       const r = await fetch("/api/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "place", instId, side, ordType, px: px || undefined, notional, lever, tp: useTpSl ? tp : undefined, sl: useTpSl ? sl : undefined }),
+        body: JSON.stringify({ action: "place", instId, side, ordType, px: px || undefined, notional, tp: useTpSl ? tp : undefined, sl: useTpSl ? sl : undefined }),
       });
       const j = await r.json();
       if (!j.ok) throw new Error(j.error);
-      setMsg({ ok: true, text: `${side === "buy" ? "Long" : "Short"} gönderildi · ${j.sz} kontrat` });
+      setMsg({ ok: true, text: `${side === "buy" ? "Alım" : "Satım"} emri gönderildi` });
       onPlaced();
     } catch (e) {
       setMsg({ ok: false, text: (e as Error).message });
@@ -67,7 +66,7 @@ export function OrderForm({ instId, last, presetPx, onPlaced }: { instId: string
 
       <label className="block">
         <span className="mb-1 flex justify-between text-xs font-semibold text-muted">
-          <span>Tutar (USDT notional)</span>
+          <span>Tutar (USDT)</span>
           <span className="font-mono text-ink num">{notional}</span>
         </span>
         <input className={field} inputMode="decimal" value={notional} onChange={(e) => setNotional(Number(e.target.value) || 0)} />
@@ -80,17 +79,9 @@ export function OrderForm({ instId, last, presetPx, onPlaced }: { instId: string
         </div>
       </label>
 
-      <label className="block">
-        <span className="mb-1 flex justify-between text-xs font-semibold text-muted">
-          <span>Kaldıraç</span>
-          <span className="font-mono text-ink">{lever}x</span>
-        </span>
-        <input type="range" min={1} max={20} value={lever} onChange={(e) => setLever(Number(e.target.value))} className="w-full accent-[rgb(var(--ink))]" />
-      </label>
-
       <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold">
         <input type="checkbox" checked={useTpSl} onChange={(e) => setUseTpSl(e.target.checked)} className="h-4 w-4 accent-[rgb(var(--ink))]" />
-        TP / SL ekle
+        Alıma TP / SL ekle
       </label>
       {useTpSl && (
         <div className="grid grid-cols-2 gap-2">
@@ -105,18 +96,18 @@ export function OrderForm({ instId, last, presetPx, onPlaced }: { instId: string
           onClick={() => submit("buy")}
           className="min-h-[48px] rounded-btn border border-ink/10 bg-long font-bold text-white shadow-btn transition-transform active:scale-[0.98] disabled:opacity-60"
         >
-          {busy === "buy" ? "..." : "Long / Al"}
+          {busy === "buy" ? "..." : "Al"}
         </button>
         <button
           disabled={!!busy}
           onClick={() => submit("sell")}
           className="min-h-[48px] rounded-btn border border-ink/10 bg-short font-bold text-white shadow-btn transition-transform active:scale-[0.98] disabled:opacity-60"
         >
-          {busy === "sell" ? "..." : "Short / Sat"}
+          {busy === "sell" ? "..." : "Sat"}
         </button>
       </div>
       {msg && <p className={`rounded-btn px-3 py-2 text-xs font-medium ${msg.ok ? "bg-long/10 text-long" : "bg-short/10 text-short"}`}>{msg.text}</p>}
-      <p className="text-[11px] leading-relaxed text-muted">Emirler OKX demo hesabına gider (x-simulated-trading). Cross margin, piyasa emrinde son fiyattan kontrata çevrilir.</p>
+      <p className="text-[11px] leading-relaxed text-muted">Spot emirler OKX demo hesabına gider (x-simulated-trading). Kaldıraç yok; TP/SL sadece alımı korur.</p>
     </div>
   );
 }

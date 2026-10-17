@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { runAgent, type AgentEvent, type Plan } from "./agent";
-import { closePosition, getPositions, getPositionsHistory, hasOkxKeys, type Position } from "./okx";
+import { cancelAlgo, getAlgoOrder, getOrder, getTicker, hasOkxKeys, placeOrder } from "./okx";
 
 /**
  * Agent fleet: each agent gets a USDT budget and a model, then trades on its own
@@ -15,7 +15,10 @@ export type AgentPhase = "idle" | "thinking" | "in_position" | "cooldown" | "err
 
 export type Trade = {
   instId: string;
-  side: "long" | "short";
+  side: "long";
+  /** base-currency quantity held by this agent */
+  qty: string;
+  algoId?: string;
   entry: number;
   exit?: number;
   contracts: string;
@@ -139,11 +142,11 @@ export async function agentAction(id: string, action: "start" | "pause" | "close
   if (action === "pause") a.status = "paused";
   if (action === "run") a.nextRunAt = 0;
   if (action === "close" && a.position) {
-    await closePosition(a.position.instId).catch(() => null);
     a.position.reason = "manual";
+    await trackPosition(a).catch(() => null);
   }
   if (action === "delete") {
-    if (a.position) await closePosition(a.position.instId).catch(() => null);
+    if (a.position) await exitPosition(a.position).catch(() => null);
     store.agents.delete(id);
   }
   save();
@@ -157,17 +160,12 @@ async function tick() {
   const agents = [...store.agents.values()];
   if (agents.length === 0 || !hasOkxKeys()) return;
 
-  // One positions snapshot per tick for every agent holding something.
-  let positions: Position[] | null = null;
-  if (agents.some((a) => a.position)) positions = await getPositions().catch(() => null);
-
   for (const a of agents) {
     if (store.busy.has(a.id)) continue;
-    if (a.position && positions) {
-      await trackPosition(a, positions);
+    if (a.position) {
+      await trackPosition(a).catch(() => null);
       continue;
     }
-    if (a.position) continue;
     if (a.status !== "running") continue;
     if (Date.now() < a.nextRunAt) {
       if (a.phase !== "error") a.phase = a.trades.length ? "cooldown" : "idle";
@@ -183,28 +181,47 @@ async function tick() {
   }
 }
 
-async function trackPosition(a: FleetAgent, positions: Position[]) {
+const FEE = 0.001; // OKX spot taker fee per side, used when the exact fill is not available
+
+/** Market-sells the agent's spot quantity after cancelling its OCO. Returns the fill price. */
+async function exitPosition(t: Trade) {
+  if (t.algoId) await cancelAlgo(t.instId, t.algoId).catch(() => null);
+  const r = await placeOrder({ instId: t.instId, side: "sell", ordType: "market", sz: t.qty, tdMode: "cash" });
+  const fill = await getOrder(t.instId, r[0].ordId).catch(() => null);
+  return Number(fill?.avgPx) || Number((await getTicker(t.instId)).last);
+}
+
+async function trackPosition(a: FleetAgent) {
   const t = a.position!;
-  const live = positions.find((p) => p.instId === t.instId && Number(p.pos) !== 0);
-  if (live) {
-    a.upl = Number(live.upl);
-    a.phase = "in_position";
-    // Time stop: never hold longer than maxHoldMin.
-    if (Date.now() - t.openedAt > a.maxHoldMin * 60_000) {
-      await closePosition(t.instId).catch(() => null);
-      t.reason = "timeout";
+  const last = Number((await getTicker(t.instId)).last);
+  const qty = Number(t.qty);
+  a.upl = (last - t.entry) * qty - (t.entry + last) * qty * FEE;
+  a.phase = "in_position";
+
+  let exit: number | null = null;
+  let reason: Trade["reason"] = t.reason;
+  if (t.reason === "manual" || Date.now() - t.openedAt > a.maxHoldMin * 60_000) {
+    // Manual close request or time stop.
+    reason = t.reason ?? "timeout";
+    exit = await exitPosition(t);
+  } else if (t.algoId) {
+    const algo = await getAlgoOrder(t.algoId).catch(() => null);
+    if (algo && (algo.state === "effective" || algo.state === "partially_effective")) {
+      exit = Number(algo.actualPx) || last;
+      reason = algo.actualSide === "tp" ? "tp" : algo.actualSide === "sl" ? "sl" : Math.abs(exit - t.tp) < Math.abs(exit - t.sl) ? "tp" : "sl";
+    } else if (algo && (algo.state === "canceled" || algo.state === "order_failed")) {
+      // OCO removed outside the agent: flatten so the ledger stays honest.
+      reason = "external";
+      exit = await exitPosition(t);
     }
-    return;
   }
-  // Position is gone: TP, SL, manual or time stop filled. Pull realised PnL.
-  const hist = await getPositionsHistory(t.instId).catch(() => []);
-  const h = hist.find((x) => Number(x.uTime) >= t.openedAt - 5_000);
-  const exit = h ? Number(h.closeAvgPx) : t.side === "long" ? (a.upl >= 0 ? t.tp : t.sl) : a.upl >= 0 ? t.tp : t.sl;
-  const pnl = h ? Number(h.realizedPnl) : a.upl;
+  if (exit === null) return;
+
+  const pnl = (exit - t.entry) * qty - (t.entry + exit) * qty * FEE;
   t.exit = exit;
   t.pnl = pnl;
+  t.reason = reason;
   t.closedAt = Date.now();
-  t.reason ??= Math.abs(exit - t.tp) < Math.abs(exit - t.sl) ? "tp" : "sl";
   a.realizedPnl += pnl;
   a.trades = [t, ...a.trades].slice(0, 50);
   a.position = null;
@@ -224,6 +241,7 @@ async function cycle(a: FleetAgent) {
   const held = [...store.agents.values()].filter((x) => x.id !== a.id && x.position).map((x) => x.position!.instId);
   let plan: Plan | null = null;
   let ordId: string | undefined;
+  let fill: { algoId?: string; qty?: string; avgPx?: number } = {};
   let ok = false;
   try {
     for await (const ev of runAgent({
@@ -241,6 +259,7 @@ async function cycle(a: FleetAgent) {
       if (ev.type === "order") {
         ok = ev.ok;
         ordId = ev.ordId;
+        fill = { algoId: ev.algoId, qty: ev.qty, avgPx: ev.avgPx };
         if (!ev.ok) a.lastError = ev.detail;
       }
       if (ev.type === "done") a.lastVerdict = ev.verdict;
@@ -252,14 +271,18 @@ async function cycle(a: FleetAgent) {
     a.events.push({ type: "log", tone: "err", text: msg }, { type: "done", ms: 0, verdict: "error" });
   }
   if (ok && plan) {
+    const qty = fill.qty ?? plan.contracts;
+    const entry = fill.avgPx ?? plan.entry;
     a.position = {
       instId: plan.instId,
-      side: plan.side,
-      entry: plan.entry,
-      contracts: plan.contracts,
-      notional: plan.notional,
-      leverage: plan.leverage,
-      margin: plan.notional / plan.leverage,
+      side: "long",
+      qty,
+      algoId: fill.algoId,
+      entry,
+      contracts: qty,
+      notional: Number(qty) * entry,
+      leverage: 1,
+      margin: Number(qty) * entry,
       tp: plan.tp,
       sl: plan.sl,
       ordId,
