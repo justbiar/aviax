@@ -17,7 +17,8 @@ export async function POST(req: NextRequest) {
   const companyName = (body.companyName ?? "Şirket hazinesi").trim().slice(0, 64) || "Şirket hazinesi";
   const reviewers = [...new Set((Array.isArray(body.reviewers) ? body.reviewers : []).filter((m): m is string => typeof m === "string" && m.startsWith("openrouter:") && (m.endsWith(":free") || m === "openrouter:openrouter/free")))].slice(0, 2);
   const isPublic = req.headers.get("x-aviax-public") === "1";
-  const companySession = getCompanySession(getCompanySessionId(req.headers.get("cookie")));
+  const sessionId = getCompanySessionId(req.headers.get("cookie"));
+  const companySession = getCompanySession(sessionId);
   // Localhost is the owner: without a company session it reads the host .env demo account. Visitors must connect their own.
   if (source === "okx" && !companySession && isPublic) return Response.json({ error: "Önce kendi OKX demo şirket hesabını bağla." }, { status: 401 });
   const policy = { ...DEFAULT_POLICY, ...(companySession?.riskPolicy ?? {}), ...(body.policy ?? {}) };
@@ -32,11 +33,12 @@ export async function POST(req: NextRequest) {
   const activeReviewers = companySession?.model === "local" ? [] : reviewers;
   let publicClient = "";
   if (isPublic) {
-    publicClient = req.headers.get("cf-connecting-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "public";
+    // Per browser session, not per IP: a jury on one venue Wi-Fi shares a single public IP.
+    publicClient = sessionId ?? req.headers.get("cf-connecting-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "public";
     const now = Date.now();
     const last = limits.__riskRequestAt!.get(publicClient) ?? 0;
-    if (now - last < 8_000) return Response.json({ error: "Şirket risk taraması en az 8 saniyede bir başlatılabilir" }, { status: 429 });
-    if (limits.__riskActivePublic! >= 4) return Response.json({ error: "Canlı demo şu an meşgul, birkaç saniye sonra yeniden deneyin" }, { status: 429 });
+    if (now - last < 5_000) return Response.json({ error: "Şirket risk taraması en az 5 saniyede bir başlatılabilir", retry: true }, { status: 429 });
+    if (limits.__riskActivePublic! >= 6) return Response.json({ error: "Canlı demo şu an meşgul, birkaç saniye sonra yeniden deneyin", retry: true }, { status: 429 });
     for (const [ip, at] of limits.__riskRequestAt!) if (now - at > 60_000) limits.__riskRequestAt!.delete(ip);
     limits.__riskRequestAt!.set(publicClient, now);
     limits.__riskActivePublic!++;

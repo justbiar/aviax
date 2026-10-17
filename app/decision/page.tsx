@@ -41,9 +41,12 @@ export default function DecisionPage() {
   const run = useCallback(async () => {
     if (runLock.current) return;
     runLock.current = true;
+    let skipped = false;
     setBusy(true); setError("");
     try {
       const res = await fetch("/api/risk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "okx" satisfies Source, shock: "none" satisfies Shock, policy, companyName, reviewers }) });
+      // Too-soon or busy turns are skipped quietly; the next 10 s tick runs again.
+      if (res.status === 429) { skipped = true; return; }
       if (!res.ok || !res.body) throw new Error((await res.json()).error ?? "İstek başarısız");
       const reader = res.body.getReader(), decoder = new TextDecoder(); let buffer = "";
       while (true) {
@@ -53,7 +56,7 @@ export default function DecisionPage() {
         if (done) break;
       }
     } catch (e) { setError(e instanceof Error ? e.message : "Risk analizi başarısız"); }
-    finally { setBusy(false); runLock.current = false; setLastScan(Date.now()); }
+    finally { setBusy(false); runLock.current = false; if (!skipped) setLastScan(Date.now()); }
   }, [companyName, policy, reviewers]);
   const runRef = useRef(run);
   useEffect(() => { runRef.current = run; }, [run]);
