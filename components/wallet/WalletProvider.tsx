@@ -9,6 +9,7 @@ import { encodeFunctionData, parseAbi, parseEther, toHex } from "viem";
  */
 
 type Mode = "browser" | "agentic";
+export type X402Requirements = { scheme: string; network: string; maxAmountRequired: string; payTo: `0x${string}`; asset: `0x${string}`; maxTimeoutSeconds: number; extra: { name: string; version: string } };
 type Eip1193 = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown>; on?: (e: string, f: (x: unknown) => void) => void };
 declare global {
   interface Window {
@@ -32,6 +33,8 @@ export type WalletState = {
   refresh: () => Promise<void>;
   /** Browser mode: send AVAX (gas) and optionally USDC from the user's wallet to an address. */
   fund: (to: `0x${string}`, avax: number, usdc: number) => Promise<string[]>;
+  /** Browser mode: sign an x402 exact-scheme (EIP-3009) payment and return the X-PAYMENT header. */
+  signX402: (req: X402Requirements) => Promise<string>;
 };
 
 const FUJI_ID = "0xa869"; // 43113
@@ -184,8 +187,50 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     [address, refresh],
   );
 
+  const signX402 = useCallback(
+    async (r: X402Requirements) => {
+      const p = provider();
+      if (!p || !address) throw new Error("Cüzdan bağlı değil");
+      await ensureFuji(p);
+      const now = Math.floor(Date.now() / 1000);
+      const authorization = {
+        from: address,
+        to: r.payTo,
+        value: r.maxAmountRequired,
+        validAfter: String(now - 60),
+        validBefore: String(now + r.maxTimeoutSeconds),
+        nonce: toHex(crypto.getRandomValues(new Uint8Array(32))),
+      };
+      const typed = {
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          TransferWithAuthorization: [
+            { name: "from", type: "address" },
+            { name: "to", type: "address" },
+            { name: "value", type: "uint256" },
+            { name: "validAfter", type: "uint256" },
+            { name: "validBefore", type: "uint256" },
+            { name: "nonce", type: "bytes32" },
+          ],
+        },
+        primaryType: "TransferWithAuthorization",
+        domain: { name: r.extra.name, version: r.extra.version, chainId: 43113, verifyingContract: r.asset },
+        message: authorization,
+      };
+      const signature = (await p.request({ method: "eth_signTypedData_v4", params: [address, JSON.stringify(typed)] })) as string;
+      const payload = { x402Version: 1, scheme: "exact", network: r.network, payload: { signature, authorization } };
+      return btoa(JSON.stringify(payload));
+    },
+    [address],
+  );
+
   return (
-    <Ctx.Provider value={{ mode, address, avax, usdc, busy, error, hasInjected, connectBrowser, createAgentic, useAgentic, disconnect, refresh, fund }}>
+    <Ctx.Provider value={{ mode, address, avax, usdc, busy, error, hasInjected, connectBrowser, createAgentic, useAgentic, disconnect, refresh, fund, signX402 }}>
       {children}
     </Ctx.Provider>
   );

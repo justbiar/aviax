@@ -27,15 +27,15 @@ export type PaymentRequirements = {
   extra: { name: string; version: string };
 };
 
-export function requirements(resource: string, priceUsdc = CYCLE_PRICE_USDC): PaymentRequirements {
+export function requirements(resource: string, priceUsdc = CYCLE_PRICE_USDC, payTo?: Hex, description = "Aviax decision cycle: market scan + JEV/LAYA decisions"): PaymentRequirements {
   return {
     scheme: "exact",
     network: X402_NETWORK,
     maxAmountRequired: String(Math.round(priceUsdc * 1e6)),
     resource,
-    description: "Aviax decision cycle: market scan + JEV/LAYA decisions",
+    description,
     mimeType: "application/json",
-    payTo: operatorAccount().address,
+    payTo: payTo ?? operatorAccount().address,
     maxTimeoutSeconds: 120,
     asset: FUJI.usdc,
     extra: { name: "USD Coin", version: "2" },

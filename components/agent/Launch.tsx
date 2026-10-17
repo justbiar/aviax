@@ -327,7 +327,7 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
                     <ol className="space-y-1.5 text-ink/80">
                       <li>1 · Ajana özel cüzdan açılır, {w.mode === "browser" ? "cüzdanından onayınla" : "agentic wallet'tan"} gas için AVAX gönderilir.</li>
                       <li>2 · Ajan kendi cüzdanıyla <b>ERC-8004</b> kimliği alır. Model ve yetki hash'i metadata'ya yazılır.</li>
-                      <li>3 · Ajana x402 ödemeleri için USDC yüklenir. Her karar turu <b>x402</b> ile ödenir.</li>
+                      <li>3 · Kendi ajanını ücretsiz kullanırsın. İstersen <b>pazara açarsın</b>; başkaları sinyal başına <b>x402</b> öder, ödeme ajanının cüzdanına gelir.</li>
                       <li>4 · Kapanan her işlem ERC-8004 <b>itibar</b> kaydına işlenir.</li>
                     </ol>
                     <div className="rounded-btn bg-ink/[0.04] p-2">

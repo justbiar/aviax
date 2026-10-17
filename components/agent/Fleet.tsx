@@ -17,6 +17,7 @@ export type FleetAgentView = {
   tradesToday: number;
   hwm: number;
   feesPaid: number;
+  listing: { enabled: boolean; priceUsdc: number; sales: number; revenueUsdc: number; lastBuyer: string | null };
   execution: "paper" | "okx";
   budget: number;
   intervalSec: number;
@@ -241,7 +242,11 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
           ) : (
             <span className="rounded-full border border-ink/20 px-2 py-0.5">{a.chain.status === "launching" ? "kayıt sürüyor…" : "kimlik yok"}</span>
           )}
-          <span className="rounded-full border border-ink/20 px-2 py-0.5">x402 {a.chain.payments} · {a.chain.paidUsdc.toFixed(2)} USDC</span>
+          {a.listing?.enabled && (
+            <span className="rounded-full border border-ink bg-sun px-2 py-0.5 font-bold">
+              Pazarda · {a.listing.priceUsdc} USDC · {a.listing.sales} satış
+            </span>
+          )}
           <span className="rounded-full border border-ink/20 px-2 py-0.5">itibar {a.chain.feedbacks}</span>
           <a href={`https://testnet.snowtrace.io/address/${a.chain.wallet}`} target="_blank" rel="noreferrer" className="rounded-full border border-ink/20 px-2 py-0.5 hover:border-ink">
             {a.chain.wallet.slice(0, 6)}…{a.chain.wallet.slice(-4)}
@@ -305,6 +310,20 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
         <button onClick={onSelect} className={`min-h-[36px] rounded-btn px-3 text-xs font-bold ${selected ? "bg-ink text-paper" : "border border-ink/20 hover:border-ink"}`}>
           {selected ? "İzleniyor" : "İzle"}
         </button>
+        {a.chain.status === "registered" &&
+          (a.listing?.enabled ? (
+            <button onClick={() => act("unlist")} className="min-h-[36px] rounded-btn border border-ink/20 px-3 text-xs font-bold hover:border-ink">Pazardan çek</button>
+          ) : (
+            <button
+              onClick={() => {
+                const v = prompt("Sinyal başına fiyat (USDC)", "0.01");
+                if (v !== null) fetch(`/api/fleet/${a.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "list", priceUsdc: Number(v) }) });
+              }}
+              className="min-h-[36px] rounded-btn bg-sun px-3 text-xs font-bold"
+            >
+              Pazara aç
+            </button>
+          ))}
         {a.chain.status === "failed" && (
           <button onClick={() => act("launch")} className="min-h-[36px] rounded-btn bg-sun px-3 text-xs font-bold">Fuji'ye tekrar dene</button>
         )}

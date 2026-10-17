@@ -22,7 +22,7 @@ export function ChainPanel({ a }: { a: FleetAgentView }) {
         <div className="flex flex-wrap gap-3 font-mono text-[11px] text-white/60">
           <span>agentId <b className="text-white">{a.chain.agentId ? `#${a.chain.agentId}` : "-"}</b></span>
           <span>yetki hash <b className="text-white">{a.chain.mandateHash ? `${a.chain.mandateHash.slice(0, 10)}…` : "-"}</b></span>
-          <span>x402 <b className="text-white">{a.chain.payments} ödeme · {a.chain.paidUsdc.toFixed(2)} USDC</b></span>
+          <span>x402 satış <b className="text-white">{a.listing?.sales ?? 0} · {(a.listing?.revenueUsdc ?? 0).toFixed(3)} USDC</b></span>
           <span>itibar <b className="text-white">{a.chain.feedbacks}</b></span>
         </div>
       </div>

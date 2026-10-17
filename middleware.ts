@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
  * x-aviax-public so routes can apply limits; wallet changes are blocked outright.
  */
 const LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
-const LOCAL_ONLY = [/^\/api\/wallet/];
+const LOCAL_ONLY = [/^\/api\/wallet/, /^\/api\/signal\/[^/]+\/agentic/];
 
 export function middleware(req: NextRequest) {
   const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "";

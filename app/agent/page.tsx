@@ -6,6 +6,7 @@ import { usePoll } from "@/lib/usePoll";
 import { AgentCard, type FleetAgentView } from "@/components/agent/Fleet";
 import { LaunchWizard } from "@/components/agent/Launch";
 import { ChainPanel } from "@/components/agent/ChainPanel";
+import { Market } from "@/components/agent/Market";
 import { useAgent } from "@/components/agent/useAgent";
 import { DecisionField } from "@/components/agent/DecisionField";
 import { PipelineRail } from "@/components/agent/PipelineRail";
@@ -109,6 +110,8 @@ export default function AgentPage() {
           </div>
         </section>
       )}
+
+      {agents.some((a) => a.chain?.status === "registered") && <Market agents={agents} />}
 
       {/* STAGE */}
       <section className="stage bg-stage text-white">
