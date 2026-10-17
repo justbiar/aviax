@@ -7,6 +7,7 @@ import { WalletMenu } from "./wallet/WalletMenu";
 const LINKS = [
   { href: "/trade", label: "Trade" },
   { href: "/agent", label: "Agent" },
+  { href: "/decision", label: "OKX analiz" },
   { href: "/pitch", label: "Sunum" },
 ];
 
@@ -15,7 +16,7 @@ export function Nav() {
   return (
     <header className="sticky top-0 z-40 border-b border-ink/10 bg-paper/85 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-4 px-4 sm:px-6">
-        <Link href="/agent" className="flex items-center gap-2" aria-label="Aviax">
+        <Link href="/" className="flex items-center gap-2" aria-label="Aviax">
           <span className="rounded-[8px] border-2 border-ink bg-sun px-2 py-0.5 font-display text-xl leading-tight tracking-wide shadow-brut">AVIAX</span>
         </Link>
         <nav className="flex items-center gap-1" aria-label="Ana menü">
@@ -29,6 +30,7 @@ export function Nav() {
           })}
         </nav>
         <div className="ml-auto" />
+        <Link href="/company" className="hidden min-h-[40px] items-center rounded-btn border-2 border-ink bg-sun px-3 text-xs font-bold sm:flex">Şirketini bağla</Link>
         <WalletMenu />
       </div>
     </header>

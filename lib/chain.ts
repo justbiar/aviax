@@ -1,4 +1,4 @@
-import { createPublicClient, createWalletClient, decodeEventLog, encodeAbiParameters, formatEther, formatUnits, http, keccak256, parseAbi, parseEther, toHex, type Hex } from "viem";
+import { createPublicClient, createWalletClient, decodeEventLog, encodeAbiParameters, fallback, formatEther, formatUnits, http, keccak256, parseAbi, parseEther, toHex, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { avalancheFuji } from "viem/chains";
 import { agenticWallet } from "./wallets";
@@ -48,7 +48,11 @@ export const operatorPk = (): Hex | null => (agenticWallet()?.pk ?? (process.env
 export const operatorKind = () => (agenticWallet() ? "agentic" : process.env.FUJI_PRIVATE_KEY ? "service" : "none");
 export const hasChain = () => Boolean(operatorPk());
 
-const transport = () => http(process.env.FUJI_RPC_URL || "https://api.avax-test.network/ext/bc/C/rpc");
+const transport = () => fallback([
+  http(process.env.FUJI_RPC_URL || "https://api.avax-test.network/ext/bc/C/rpc"),
+  // Public fallback keeps Fuji read/settlement available when the public Avalanche RPC rate-limits this host.
+  http("https://avalanche-fuji-c-chain-rpc.publicnode.com"),
+]);
 export const publicClient = createPublicClient({ chain: avalancheFuji, transport: transport() });
 
 export const operatorAccount = () => privateKeyToAccount(operatorPk() as Hex);

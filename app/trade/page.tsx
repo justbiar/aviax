@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CandleChart, type Overlay } from "@/components/trade/CandleChart";
 import { OrderBook, RecentTrades } from "@/components/trade/OrderBook";
 import { OrderForm } from "@/components/trade/OrderForm";
 import { AccountPanel, type Account } from "@/components/trade/AccountPanel";
+import { CompanyActivity } from "@/components/company/CompanyActivity";
 import { usePoll } from "@/lib/usePoll";
 import { fmtCompact, fmtPct, fmtPx, short } from "@/lib/fmt";
 
@@ -17,8 +18,10 @@ export default function TradePage() {
   const [bookTab, setBookTab] = useState<"book" | "trades">("book");
   const [pickedPx, setPickedPx] = useState<string>();
   const [query, setQuery] = useState("");
+  const [publicSite, setPublicSite] = useState(false);
   const { data: tickers } = usePoll<Ticker[]>("/api/market?kind=tickers", 5000);
   const { data: acct, reload } = usePoll<Account>("/api/account", 4000);
+  useEffect(() => setPublicSite(!/^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)), []);
 
   const list = useMemo(
     () =>
@@ -79,16 +82,12 @@ export default function TradePage() {
           <div className={`${card} overflow-hidden`}>
             <CandleChart instId={instId} overlays={overlays} height={440} />
           </div>
-          <div className={`${card} overflow-hidden`}>
-            <AccountPanel acct={acct} reload={reload} />
-          </div>
+          {publicSite ? <CompanyActivity /> : <div className={`${card} overflow-hidden`}><AccountPanel acct={acct} reload={reload} /></div>}
         </section>
 
         {/* book + form */}
         <aside className="space-y-3">
-          <div className={`${card} overflow-hidden`}>
-            <OrderForm instId={instId} last={last} presetPx={pickedPx} onPlaced={reload} />
-          </div>
+          {publicSite ? <div className={`${card} p-4`}><p className="font-mono text-xs uppercase tracking-wider text-muted">Şirket hesabı · salt okunur</p><p className="mt-2 text-sm text-ink/65">Bu panel şirket portföyündeki varlık ve emir geçmişini gösterir. Şirket OKX bağlantısından emir göndermez.</p></div> : <div className={`${card} overflow-hidden`}><OrderForm instId={instId} last={last} presetPx={pickedPx} onPlaced={reload} /></div>}
           <div className={`${card} overflow-hidden pb-2`}>
             <div className="flex gap-1 p-2">
               {(["book", "trades"] as const).map((b) => (

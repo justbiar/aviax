@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { runAgent, type AgentEvent, type Plan } from "./agent";
-import { balances, fundAvax, fundUsdc, giveFeedback, hasChain, mandateHash, registerAgent, txUrl, usdcBalance } from "./chain";
+import { balances, fundAvax, giveFeedback, hasChain, mandateHash, registerAgent, txUrl, usdcBalance } from "./chain";
 import { CYCLE_PRICE_USDC } from "./x402";
 import { cancelAlgo, getAlgoOrder, getOrder, getTicker, hasOkxKeys, placeOrder } from "./okx";
 
@@ -75,6 +75,11 @@ export type ChainState = {
 export type FleetAgent = {
   id: string;
   name: string;
+  /** Company treasury decision agents are identity-only and never enter the trading scheduler. */
+  decisionOnly?: boolean;
+  companyName?: string;
+  companyPolicyHash?: Hex;
+  companyDecisionEndpoint?: string;
   model: string;
   /** second-opinion model in the LAYA seat */
   validator: string;
@@ -116,6 +121,10 @@ export type NewAgent = Pick<FleetAgent, "name" | "model" | "validator" | "openro
   launchOnFuji: boolean;
   funding: "agentic" | "browser";
   owner: Hex | null;
+  decisionOnly?: boolean;
+  companyName?: string;
+  companyPolicyHash?: Hex;
+  companyDecisionEndpoint?: string;
 };
 
 type Store = { agents: Map<string, FleetAgent>; busy: Set<string>; timer?: NodeJS.Timeout; loaded: boolean; tick?: () => Promise<void> };
@@ -152,6 +161,9 @@ function migrate(a: FleetAgent): FleetAgent {
     a.lastError = null;
     if (a.phase === "error") a.phase = "cooldown";
   }
+  // Older versions tried to prefund an owner's agent wallet with USDC even though
+  // only marketplace buyers pay x402. Hide that obsolete launch warning on reload.
+  a.chain.log = (a.chain.log ?? []).filter((entry) => !/USDC gönderilemedi:.*x402 için|x402 ödemesi yapılamadı/i.test(entry.text));
   a.feesPaid ??= 0;
   return a;
 }
@@ -238,8 +250,8 @@ export function createAgent(input: NewAgent) {
 }
 
 /**
- * Launch on Avalanche Fuji: fund the agent wallet, register its ERC-8004 identity
- * from its own wallet (model + mandate hash in metadata), top it up with USDC for x402.
+ * Launch on Avalanche Fuji: fund gas and register its ERC-8004 identity.
+ * The owner runs their agent for free; x402 is paid by marketplace buyers directly.
  * The agent starts trading only after the identity exists.
  */
 async function launchOnChain(a: FleetAgent) {
@@ -247,9 +259,9 @@ async function launchOnChain(a: FleetAgent) {
   try {
     chainLog(a, "info", `Ajan cüzdanı oluşturuldu: ${c.wallet}`);
     if (c.funding === "browser") {
-      // The user's wallet sends AVAX (+ USDC) from the browser; wait until it lands.
+      // The user's wallet sends only the AVAX needed for registration gas.
       c.status = "awaiting_funds";
-      chainLog(a, "info", "Cüzdanından ajan cüzdanına fon bekleniyor (AVAX gas + USDC x402)...");
+      chainLog(a, "info", "Cüzdanından ajan cüzdanına Fuji gas için AVAX bekleniyor...");
       save();
       const deadline = Date.now() + 10 * 60_000;
       let b = await balances(c.wallet);
@@ -269,31 +281,31 @@ async function launchOnChain(a: FleetAgent) {
 
     const card = {
       type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
-      name: `Aviax · ${a.name}`,
-      description: "Prediction-native spot trading agent. Decisions come from decision models as probability distributions.",
-      services: [{ name: "aviax-signal", endpoint: `/api/signal/${a.id}`, payment: { protocol: "x402", network: "avalanche-fuji", asset: "USDC", price: "set by owner when listed" } }],
+      name: a.companyName ? `Aviax · ${a.companyName} · ${a.name}` : `Aviax · ${a.name}`,
+      description: a.decisionOnly ? `Company treasury decision agent for ${a.companyName}. It evaluates the company's OKX portfolio and policy; it does not place trades.` : "Prediction-native spot trading agent. Decisions come from decision models as probability distributions.",
+      services: a.decisionOnly
+        ? [{ name: "aviax-company-decision", endpoint: a.companyDecisionEndpoint ?? `/api/company/decision/${a.id}`, payment: { protocol: "x402", network: "avalanche-fuji", asset: "USDC", price: "set by company" } }]
+        : [{ name: "aviax-signal", endpoint: `/api/signal/${a.id}`, payment: { protocol: "x402", network: "avalanche-fuji", asset: "USDC", price: "set by owner when listed" } }],
       owner: c.owner,
+      company: a.companyName,
       model: a.model,
       validator: a.validator,
       mandate: { ...a.mandate, budgetUsdt: a.budget },
       mandateHash: c.mandateHash,
+      companyPolicyHash: a.companyPolicyHash,
       supportedTrust: ["reputation"],
     };
-    const reg = await registerAgent(a.walletPk, card, { model: a.model, validator: a.validator, mandateHash: c.mandateHash ?? "", ...(c.owner ? { owner: c.owner } : {}) });
+    const reg = await registerAgent(a.walletPk, card, { model: a.model, validator: a.validator, mandateHash: c.mandateHash ?? "", ...(a.companyName ? { company: a.companyName } : {}), ...(a.companyPolicyHash ? { companyPolicyHash: a.companyPolicyHash } : {}), ...(c.owner ? { owner: c.owner } : {}) });
     c.agentId = reg.agentId;
     chainLog(a, "register", `ERC-8004 kimliği alındı: agentId #${reg.agentId} (yetki hash'i metadata'da)`, txUrl(reg.hash));
     save();
 
-    if (c.funding === "agentic") {
-      const topUp = Number(process.env.FUJI_AGENT_USDC || 0.2);
-      try {
-        const usdcTx = await fundUsdc(c.wallet, topUp);
-        chainLog(a, "fund", `Agentic wallet → ajan ${topUp} USDC (x402 ödemeleri için)`, txUrl(usdcTx));
-      } catch (e) {
-        chainLog(a, "error", `USDC gönderilemedi: ${(e as Error).message.slice(0, 120)}. x402 için agentic wallet'a Fuji USDC lazım.`);
-      }
-    }
     c.status = "registered";
+    if (a.decisionOnly) {
+      a.status = "paused";
+      save();
+      return;
+    }
     a.status = "running";
     a.nextRunAt = Date.now();
     save();
@@ -315,6 +327,7 @@ async function launchOnChain(a: FleetAgent) {
 export function setListing(id: string, enabled: boolean, priceUsdc?: number) {
   const a = store.agents.get(id);
   if (!a) throw new Error("agent not found");
+  if (a.decisionOnly) throw new Error("Şirket karar ajanı pazarda senaryo çalıştırmaz");
   if (enabled && a.chain.status !== "registered") throw new Error("Pazara açmak için ajan önce Fuji'de ERC-8004 kimliği almalı");
   a.listing.enabled = enabled;
   if (priceUsdc !== undefined) a.listing.priceUsdc = Math.min(10, Math.max(0.001, priceUsdc));
@@ -366,6 +379,7 @@ export async function retryLaunch(id: string) {
 export async function agentAction(id: string, action: "start" | "pause" | "close" | "delete" | "run" | "launch") {
   const a = store.agents.get(id);
   if (!a) throw new Error("agent not found");
+  if (a.decisionOnly && ["start", "run", "close"].includes(action)) throw new Error("Şirket karar ajanı trade işlemi yürütmez");
   if (action === "launch") return retryLaunch(id);
   if ((action === "start" || action === "run") && a.chain.enabled && a.chain.status !== "registered") throw new Error("Ajan önce Fuji'de kaydedilmeli");
   if (action === "start") {

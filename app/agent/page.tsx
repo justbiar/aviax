@@ -16,6 +16,7 @@ import { DistributionCard } from "@/components/agent/DistributionCard";
 import { PlanView } from "@/components/agent/PlanView";
 import { CandleChart, type Overlay } from "@/components/trade/CandleChart";
 import { short } from "@/lib/fmt";
+import { CompanyAgentSettings } from "@/components/company/CompanyAgentSettings";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 const ORDER = ["direction", "size", "leverage", "tp", "sl", "gate"] as const;
@@ -25,7 +26,7 @@ export default function AgentPage() {
   const [scenario, setScenario] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const { data: fleet, reload } = usePoll<FleetAgentView[]>("/api/fleet", 3000);
-  const agents = fleet ?? [];
+  const agents = (fleet ?? []).filter((a) => !a.decisionOnly);
   const current = agents.find((a) => a.id === selected);
 
   // Auto-follow the first agent when the page opens.
@@ -91,6 +92,8 @@ export default function AgentPage() {
         </div>
       </section>
 
+      <CompanyAgentSettings />
+
       {/* FLEET */}
       {agents.length > 0 && (
         <section className="border-b border-ink/10 bg-paper">
@@ -115,6 +118,15 @@ export default function AgentPage() {
       {agents.some((a) => a.chain?.status === "registered") && (
         <Market
           agents={agents}
+          onOwnRun={async (id) => {
+            setScenario(null);
+            setSelected(id);
+            follow(id);
+            document.getElementById("stage")?.scrollIntoView({ behavior: "smooth" });
+            const r = await fetch(`/api/fleet/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "run" }) });
+            if (!r.ok) throw new Error((await r.json()).error || "Ajan başlatılamadı");
+            reload();
+          }}
           onScenario={async (name, start) => {
             setSelected(null);
             setScenario(name);

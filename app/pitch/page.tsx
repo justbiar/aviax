@@ -20,7 +20,7 @@ const DECISIONS = [
   { q: "Şimdi alınır mı?", type: "choice", out: "al / USDT'de bekle", ex: "AL 66% · BEKLE 34%" },
   { q: "Ne kadar?", type: "score", out: "bütçenin 5 seviyesi", ex: "Medium (2.4 / 4)" },
   { q: "TP / SL nerede?", type: "choice", out: "ATR katlarına dağılım", ex: "TP 2 ATR · SL 1 ATR" },
-  { q: "İşleme girilsin mi?", type: "noul", out: "p(EV > 0)", ex: "0.71 → EXECUTE" },
+  { q: "İşleme girilsin mi?", type: "noul + choice", out: "p(kurulum) · p(al)", ex: "0.71 → EXECUTE" },
 ];
 
 const FLOW = [

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import type { OkxCredentials } from "./companySession";
 
 const BASE = "https://www.okx.com";
 
@@ -15,7 +16,7 @@ export class OkxError extends Error {
   }
 }
 
-async function request<T>(method: "GET" | "POST", path: string, opts: { query?: Record<string, string | number | undefined>; body?: unknown; auth?: boolean } = {}): Promise<T> {
+async function request<T>(method: "GET" | "POST", path: string, opts: { query?: Record<string, string | number | undefined>; body?: unknown; auth?: boolean; credentials?: OkxCredentials } = {}): Promise<T> {
   const qs = opts.query
     ? "?" + new URLSearchParams(Object.entries(opts.query).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)])).toString()
     : "";
@@ -23,18 +24,21 @@ async function request<T>(method: "GET" | "POST", path: string, opts: { query?: 
   const body = opts.body ? JSON.stringify(opts.body) : "";
   const headers: Record<string, string> = { "Content-Type": "application/json" };
 
-  if (isDemo()) headers["x-simulated-trading"] = "1";
+  if (isDemo() || opts.credentials) headers["x-simulated-trading"] = "1";
   if (opts.auth) {
-    if (!hasOkxKeys()) throw new OkxError("NO_KEYS", "OKX API keys are missing in .env.local");
+    const apiKey = opts.credentials?.apiKey ?? process.env.OKX_API_KEY;
+    const secretKey = opts.credentials?.secretKey ?? process.env.OKX_SECRET_KEY;
+    const passphrase = opts.credentials?.passphrase ?? process.env.OKX_PASSPHRASE;
+    if (!apiKey || !secretKey || !passphrase) throw new OkxError("NO_KEYS", "OKX demo API bilgileri eksik");
     const ts = new Date().toISOString();
     const sign = crypto
-      .createHmac("sha256", process.env.OKX_SECRET_KEY!)
+      .createHmac("sha256", secretKey)
       .update(ts + method + requestPath + body)
       .digest("base64");
-    headers["OK-ACCESS-KEY"] = process.env.OKX_API_KEY!;
+    headers["OK-ACCESS-KEY"] = apiKey;
     headers["OK-ACCESS-SIGN"] = sign;
     headers["OK-ACCESS-TIMESTAMP"] = ts;
-    headers["OK-ACCESS-PASSPHRASE"] = process.env.OKX_PASSPHRASE!;
+    headers["OK-ACCESS-PASSPHRASE"] = passphrase;
   }
 
   const res = await fetch(BASE + requestPath, { method, headers, body: body || undefined, cache: "no-store" });
@@ -78,15 +82,15 @@ export async function getInstrument(instId: string) {
 
 /* ---------- private account / trading ---------- */
 
-export const getBalance = async () =>
-  (await request<{ totalEq: string; details: { ccy: string; eq: string; availBal: string; upl: string }[] }[]>("GET", "/api/v5/account/balance", { auth: true }))[0];
+export const getBalance = async (credentials?: OkxCredentials) =>
+  (await request<{ totalEq: string; details: { ccy: string; eq: string; availBal: string; upl: string; eqUsd?: string }[] }[]>("GET", "/api/v5/account/balance", { auth: true, credentials }))[0];
 
 export type Position = { instId: string; posSide: string; pos: string; avgPx: string; markPx: string; upl: string; uplRatio: string; lever: string; liqPx: string; notionalUsd: string; margin: string; cTime: string };
 export const getPositions = () => request<Position[]>("GET", "/api/v5/account/positions", { auth: true, query: { instType: "SWAP" } });
 
 export type Order = { ordId: string; instId: string; side: string; ordType: string; px: string; sz: string; accFillSz: string; state: string; cTime: string; avgPx: string; lever: string };
-export const getOpenOrders = () => request<Order[]>("GET", "/api/v5/trade/orders-pending", { auth: true, query: { instType: "SPOT" } });
-export const getOrderHistory = () => request<Order[]>("GET", "/api/v5/trade/orders-history", { auth: true, query: { instType: "SPOT", limit: 30 } });
+export const getOpenOrders = (credentials?: OkxCredentials) => request<Order[]>("GET", "/api/v5/trade/orders-pending", { auth: true, credentials, query: { instType: "SPOT" } });
+export const getOrderHistory = (credentials?: OkxCredentials) => request<Order[]>("GET", "/api/v5/trade/orders-history", { auth: true, credentials, query: { instType: "SPOT", limit: 30 } });
 
 export const getOrder = async (instId: string, ordId: string) =>
   (await request<(Order & { fee: string; feeCcy: string; fillPx: string })[]>("GET", "/api/v5/trade/order", { auth: true, query: { instId, ordId } }))[0];

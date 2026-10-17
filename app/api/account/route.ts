@@ -1,9 +1,10 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getAlgoOrders, getBalance, getOpenOrders, getOrderHistory, hasOkxKeys } from "@/lib/okx";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  if (req.headers.get("x-aviax-public") === "1") return NextResponse.json({ configured: false, companyAccountRequired: true });
   if (!hasOkxKeys()) return NextResponse.json({ configured: false });
   const settle = async <T,>(p: Promise<T>) => p.then((v) => ({ ok: true as const, v })).catch((e: Error) => ({ ok: false as const, e: e.message }));
   const [balance, orders, algos, history] = await Promise.all([settle(getBalance()), settle(getOpenOrders()), settle(getAlgoOrders()), settle(getOrderHistory())]);

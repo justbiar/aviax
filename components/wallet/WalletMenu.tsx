@@ -6,15 +6,15 @@ import { useWallet } from "./WalletProvider";
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
-type OkxAccount = { configured: boolean; balance?: { totalEq: string } | null; assets?: { ccy: string; eq: string; eqUsd?: string }[]; errors?: string[] };
+type CompanyAccount = { connected: boolean; companyName?: string; balance?: { totalEq: string } | null; assets?: { ccy: string; eq: string; eqUsd?: string }[]; errors?: string[] };
 
-/** OKX demo account linked on the server (API keys in .env.local): equity and assets. */
+/** Public visitors connect their own isolated company demo account from onboarding. */
 function OkxSection({ open }: { open: boolean }) {
-  const [acct, setAcct] = useState<OkxAccount | null>(null);
+  const [acct, setAcct] = useState<CompanyAccount | null>(null);
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    const load = () => fetch("/api/account", { cache: "no-store" }).then((r) => r.json()).then((j) => alive && setAcct(j)).catch(() => null);
+    const load = () => fetch("/api/company/activity", { cache: "no-store" }).then((r) => r.json()).then((j) => alive && setAcct(j)).catch(() => null);
     load();
     const id = setInterval(load, 8000);
     return () => {
@@ -31,17 +31,17 @@ function OkxSection({ open }: { open: boolean }) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="grid h-6 w-6 place-items-center rounded-md bg-ink font-display text-[10px] text-paper">OKX</span>
-          <span className="text-xs font-bold uppercase tracking-wider text-muted">Demo hesap</span>
+          <span className="text-xs font-bold uppercase tracking-wider text-muted">Şirket portföyü</span>
         </div>
-        <span className={`flex items-center gap-1.5 text-[11px] font-semibold ${acct?.configured ? "text-long" : "text-muted"}`}>
-          <span className={`h-1.5 w-1.5 rounded-full ${acct?.configured ? "bg-long" : "bg-ink/25"}`} />
-          {acct === null ? "yükleniyor" : acct.configured ? "bağlı" : "bağlı değil"}
+        <span className={`flex items-center gap-1.5 text-[11px] font-semibold ${acct?.connected ? "text-long" : "text-muted"}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${acct?.connected ? "bg-long" : "bg-ink/25"}`} />
+          {acct === null ? "yükleniyor" : acct.connected ? "bağlı" : "bağlı değil"}
         </span>
       </div>
-      {acct?.configured && acct.balance && (
+      {acct?.connected && acct.balance && (
         <>
           <div className="rounded-btn bg-ink/[0.04] p-2">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">Toplam varlık</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">{acct.companyName ?? "Şirket"} · toplam varlık</div>
             <div className="font-mono text-lg font-bold num">${fmt(acct.balance.totalEq, 2)}</div>
           </div>
           <div className="max-h-[150px] space-y-1 overflow-y-auto scroll-thin">
@@ -58,7 +58,7 @@ function OkxSection({ open }: { open: boolean }) {
           </Link>
         </>
       )}
-      {acct && !acct.configured && <p className="text-xs text-muted">OKX demo API anahtarları .env.local'de tanımlı değil.</p>}
+      {acct && !acct.connected && <Link href="/company" className="block text-xs text-muted underline">Şirket portföyünü bağla →</Link>}
       {acct?.errors && acct.errors.length > 0 && <p className="text-xs text-short">{acct.errors[0]}</p>}
     </div>
   );

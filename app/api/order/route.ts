@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
  * place: { instId, side, ordType, notional (USDT), px?, tp?, sl? }
  */
 export async function POST(req: NextRequest) {
+  if (req.headers.get("x-aviax-public") === "1") return NextResponse.json({ ok: false, error: "Herkese açık demo üzerinden OKX emri gönderilemez. Şirket analiz kurulumu salt okunur." }, { status: 403 });
   const b = await req.json();
   try {
     if (b.action === "cancel") return NextResponse.json(await cancelOrder(b.instId, b.ordId));

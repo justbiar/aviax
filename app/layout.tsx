@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Anton, Figtree, JetBrains_Mono } from "next/font/google";
 import { Nav } from "@/components/Nav";
+import { DemoGate } from "@/components/DemoGate";
 import { WalletProvider } from "@/components/wallet/WalletProvider";
 import "./globals.css";
 
@@ -20,6 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <WalletProvider>
           <Nav />
           {children}
+          <DemoGate />
         </WalletProvider>
       </body>
     </html>

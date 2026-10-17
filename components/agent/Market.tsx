@@ -9,7 +9,7 @@ import type { FleetAgentView } from "./Fleet";
  * wallet in Fuji USDC and the agent runs a live decision cycle for them on the stage.
  * The owner's own agents are free.
  */
-export function Market({ agents, onScenario }: { agents: FleetAgentView[]; onScenario: (name: string, start: (signal: AbortSignal) => Promise<Response>) => Promise<void> }) {
+export function Market({ agents, onScenario, onOwnRun }: { agents: FleetAgentView[]; onScenario: (name: string, start: (signal: AbortSignal) => Promise<Response>) => Promise<void>; onOwnRun: (id: string, name: string) => Promise<void> }) {
   const w = useWallet();
   const listed = agents.filter((a) => a.listing?.enabled);
   const [busy, setBusy] = useState<string | null>(null);
@@ -19,6 +19,11 @@ export function Market({ agents, onScenario }: { agents: FleetAgentView[]; onSce
     setBusy(a.id);
     setErr(null);
     try {
+      const isOwner = Boolean(w.address && a.chain.owner?.toLowerCase() === w.address.toLowerCase());
+      if (isOwner) {
+        await onOwnRun(a.id, a.name);
+        return;
+      }
       if (!w.address) throw new Error("Senaryoyu başlatmak için sağ üstten cüzdan bağla");
       if (w.mode === "browser") {
         const r1 = await fetch(`/api/signal/${a.id}`, { cache: "no-store" });
@@ -44,7 +49,7 @@ export function Market({ agents, onScenario }: { agents: FleetAgentView[]; onSce
         <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
           <div>
             <h2 className="font-display text-3xl uppercase tracking-wide">Ajan pazarı</h2>
-            <p className="text-sm text-muted">Kendi ajanın ücretsiz. Pazardaki bir ajanın senaryosunu başlat: x402 ile ödersin (ajanın cüzdanına), ajan senin için canlı bir karar turu çalıştırır ve sahnede izlersin.</p>
+            <p className="text-sm text-muted">Kendi ajanın ücretsiz. Pazardaki bir ajanın senaryosunu başlat: x402 ile ödersin (ajanın cüzdanına) ve ajan senin için canlı bir karar turu çalıştırır.</p>
           </div>
           {err && <span className="text-sm text-short">{err}</span>}
         </div>
@@ -54,6 +59,7 @@ export function Market({ agents, onScenario }: { agents: FleetAgentView[]; onSce
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {listed.map((a) => {
               const wins = a.trades.filter((t) => (t.pnl ?? 0) > 0).length;
+              const isOwner = Boolean(w.address && a.chain.owner && a.chain.owner.toLowerCase() === w.address.toLowerCase());
               return (
                 <div key={a.id} className="flex flex-col rounded-card border border-ink/15 bg-paper p-4 shadow-card">
                   <div className="flex items-start justify-between gap-2">
@@ -73,7 +79,7 @@ export function Market({ agents, onScenario }: { agents: FleetAgentView[]; onSce
                     <dt className="text-muted">Senaryo satışı</dt><dd className="text-right">{a.listing.sales} · {a.listing.revenueUsdc.toFixed(3)} USDC</dd>
                   </dl>
                   <button onClick={() => start(a)} disabled={busy !== null} className="mt-4 min-h-[44px] rounded-btn border border-ink/10 bg-sun font-bold shadow-btn transition-transform hover:-translate-y-px disabled:opacity-60">
-                    {busy === a.id ? "Senaryo çalışıyor..." : `Senaryoyu başlat · ${a.listing.priceUsdc} USDC`}
+                    {busy === a.id ? "Senaryo çalışıyor..." : isOwner ? "Kendi ajanını çalıştır · ücretsiz" : `Senaryoyu başlat · ${a.listing.priceUsdc} USDC`}
                   </button>
                 </div>
               );

@@ -20,7 +20,7 @@
 }
 
 html { -webkit-font-smoothing: antialiased; }
-body { background: rgb(var(--paper)); color: rgb(var(--ink)); }
+body { background: rgb(var(--paper)); color: rgb(var(--ink)); overflow-x: clip; }
 
 /* faint grid paper behind the pages */
 .paper-grid {

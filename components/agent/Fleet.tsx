@@ -10,6 +10,8 @@ export type ChainLogView = { at: number; kind: string; text: string; tx?: string
 export type FleetAgentView = {
   id: string;
   name: string;
+  decisionOnly?: boolean;
+  companyName?: string;
   model: string;
   validator: string;
   mandate: { allowed: string[]; maxTradeUsdt: number; maxDailyTrades: number; maxDrawdownPct: number; minGate: number };

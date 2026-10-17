@@ -12,7 +12,6 @@ const PAIRS = ["BTC", "ETH", "SOL", "AVAX", "XRP", "DOGE", "LINK", "SUI", "NEAR"
 const STEPS = ["Model", "Yetkiler", "Fuji'ye fırlat"] as const;
 
 const GAS_AVAX = 0.03;
-const X402_USDC = 0.2;
 
 export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void }) {
   const [step, setStep] = useState(0);
@@ -33,6 +32,7 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
   const [model, setModel] = useState("");
   const [orKey, setOrKey] = useState("");
   const [orModel, setOrModel] = useState("");
+  const [serverOpenRouter, setServerOpenRouter] = useState(false);
   // step 2
   const [budget, setBudget] = useState(500);
   const [maxTradePct, setMaxTradePct] = useState(40);
@@ -43,7 +43,7 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
   const [intervalSec, setIntervalSec] = useState(300);
   const [execution, setExecution] = useState<"paper" | "okx">("paper");
   // step 3
-  const [onFuji, setOnFuji] = useState(true);
+  const [onFuji, setOnFuji] = useState(false);
   // model connection test
   type TestResult = { role: string; model: string; ok: boolean; ms: number; probabilities: Record<string, number> | null; choice: string | null; error: string | null };
   const [testing, setTesting] = useState(false);
@@ -60,6 +60,12 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
     }).catch(() => null);
   }, []);
 
+  useEffect(() => {
+    fetch("/api/status", { cache: "no-store" }).then((r) => r.json()).then((d: { llm?: boolean }) => {
+      setServerOpenRouter(Boolean(d.llm));
+    }).catch(() => setServerOpenRouter(false));
+  }, []);
+
   useEffect(() => setTest(null), [source, model, orModel, orKey]);
 
   const local = options.filter((o) => o.value.startsWith("ollama:"));
@@ -68,9 +74,8 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
   // The second local model always gives the second opinion.
   const validator = local.find((o) => o.value !== model)?.value ?? local[0]?.value ?? "shadow";
   const maxTradeUsdt = Math.max(5, Math.round((budget * maxTradePct) / 100));
-  const canNext = step === 0 ? Boolean(primary) && (source === "local" || orKey.length > 10) : step === 1 ? budget >= 10 : true;
+  const canNext = step === 0 ? Boolean(primary) && (source === "local" || serverOpenRouter || orKey.length > 10) : step === 1 ? budget >= 10 : true;
   const lowGas = Boolean(w.address) && (w.avax ?? 0) < GAS_AVAX;
-  const lowUsdc = Boolean(w.address) && (w.usdc ?? 0) < X402_USDC;
   const fujiBlocked = onFuji && (!w.address || lowGas);
 
   const mandate = useMemo(() => ({ allowed, maxTradeUsdt, maxDailyTrades, maxDrawdownPct, minGate }), [allowed, maxTradeUsdt, maxDailyTrades, maxDrawdownPct, minGate]);
@@ -123,9 +128,9 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
       onLaunched(j.id);
       if (j.note) setLaunchNote(j.note);
       if (onFuji && w.mode === "browser") {
-        // The user's own wallet funds the new agent wallet; the server waits for it.
-        setLaunchNote("Cüzdanında iki işlemi onayla: gas için AVAX ve x402 için USDC.");
-        await w.fund(j.wallet, GAS_AVAX, (w.usdc ?? 0) >= X402_USDC ? X402_USDC : 0);
+        // Owner runs are free; only the agent wallet's Fuji gas is needed for registration.
+        setLaunchNote("Cüzdanında gas için AVAX işlemini onayla.");
+        await w.fund(j.wallet, GAS_AVAX, 0);
         setLaunchNote("Fon gönderildi. Ajan Fuji'de kaydediliyor, kartından takip edebilirsin.");
       } else setLaunchNote(null);
       setStep(0);
@@ -168,7 +173,7 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
                   <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Karar kaynağı">
                     {[
                       { v: "local" as const, t: "Yerel", sub: "Ollama · karar modelleri", d: "Tek forward pass, olasılık dağılımı döner. İnternet ve kota gerekmez.", tag: `${local.length} model kurulu` },
-                      { v: "openrouter" as const, t: "OpenRouter", sub: "Bulut · ücretsiz LLM'ler", d: "Kendi API anahtarınla. LLM'den dağılım JSON olarak istenir, daha yavaş.", tag: `${openrouter.length} ücretsiz model` },
+                      { v: "openrouter" as const, t: "OpenRouter", sub: "Bulut · ücretsiz LLM'ler", d: serverOpenRouter ? "Demo sunucusunun anahtarıyla çalışır. Anahtar ziyaretçilere gösterilmez." : "Kendi API anahtarınla çalışır. LLM'den dağılım JSON olarak istenir.", tag: `${openrouter.length} ücretsiz model` },
                     ].map((o) => (
                       <button
                         key={o.v}
@@ -204,10 +209,18 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
                   </div>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <label>
-                      <span className={label}>OpenRouter API anahtarı</span>
-                      <input className={`${field} font-mono`} type="password" value={orKey} placeholder="sk-or-..." onChange={(e) => setOrKey(e.target.value)} autoComplete="off" />
-                    </label>
+                    {serverOpenRouter ? (
+                      <div className="rounded-btn border border-ink/15 bg-ink/[0.03] p-3">
+                        <span className={label}>OpenRouter bağlantısı</span>
+                        <p className="text-sm font-semibold">Demo sunucusu bağlı</p>
+                        <p className="mt-1 text-xs text-muted">Anahtar sunucuda kalır ve tarayıcıya gönderilmez.</p>
+                      </div>
+                    ) : (
+                      <label>
+                        <span className={label}>OpenRouter API anahtarı</span>
+                        <input className={`${field} font-mono`} type="password" value={orKey} placeholder="sk-or-..." onChange={(e) => setOrKey(e.target.value)} autoComplete="off" />
+                      </label>
+                    )}
                     <label>
                       <span className={label}>Ücretsiz model</span>
                       <select className={field} value={orModel} onChange={(e) => setOrModel(e.target.value)}>
@@ -344,7 +357,6 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
                       )}
                     </div>
                     {lowGas && <p className="font-semibold text-short">Cüzdanda yeterli Fuji AVAX yok (en az {GAS_AVAX}). Sağ üstteki menüden faucet'e git.</p>}
-                    {!lowGas && lowUsdc && <p className="font-semibold text-orange-600">Cüzdanda USDC az: x402 ödemeleri için Circle faucet'ten Fuji USDC al.</p>}
                   </div>
                 </div>
                 {isPublic ? (

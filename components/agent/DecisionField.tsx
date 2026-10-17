@@ -67,7 +67,7 @@ export function DecisionField({ s }: { s: AgentState }) {
   const gate = gateDec ? 0.6 * (gateDec.jev.value ?? 0) + 0.4 * (gateDec.laya.value ?? 0) : null;
 
   const center = (() => {
-    if (s.plan && gate !== null) return { top: gateDec?.pick === "yes" ? "EXECUTE" : "HOLD", big: `${Math.round(gate * 100)}%`, sub: "p(EV > 0)" };
+    if (s.plan && gate !== null) return { top: gateDec?.pick === "yes" ? "EXECUTE" : "HOLD", big: `${Math.round(gate * 100)}%`, sub: "risk kapısı" };
     if (dirDec && dir) return { top: dirDec.pick === "long" ? "AL" : dirDec.pick === "flat" ? "BEKLE" : dirDec.pick.toUpperCase(), big: `${Math.round(Math.max(dir.long, dir.short, dir.flat) * 100)}%`, sub: "yön olasılığı" };
     if (pairDec && chosen) return { top: short(chosen), big: `${Math.round((0.6 * pairDec.jev.probabilities[chosen] + 0.4 * pairDec.laya.probabilities[chosen]) * 100)}%`, sub: "parite olasılığı" };
     if (s.running) return { top: s.current?.toUpperCase() ?? "BOOT", big: `${Object.keys(s.workers).length}/${s.pairs.length || "-"}`, sub: "worker" };
