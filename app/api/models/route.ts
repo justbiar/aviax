@@ -9,7 +9,9 @@ const g = globalThis as typeof globalThis & { __models?: Cache };
 
 /** Free OpenRouter models (live list) plus decision models installed in the local Ollama. */
 export async function GET() {
-  if (g.__models && Date.now() - g.__models.at < 10 * 60_000) return NextResponse.json(g.__models.data);
+  // Serve from cache only when it includes local models; an Ollama outage must not stick.
+  if (g.__models && g.__models.data.ollama && g.__models.data.options.some((o) => o.value.startsWith("ollama:")) && Date.now() - g.__models.at < 2 * 60_000)
+    return NextResponse.json(g.__models.data);
   const options: ModelOption[] = [];
 
   // Local: only models that are pulled and advertise the "decision" capability.

@@ -119,24 +119,45 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
                   <input className={field} value={name} placeholder="ör. Atlas" onChange={(e) => setName(e.target.value)} maxLength={24} />
                 </label>
                 <div>
-                  <span className={label}>Karar modeli (ana model karar verir, diğer yerel model ikinci görüş verir)</span>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    {local.map((o) => (
-                      <button key={o.value} onClick={() => { setSource("local"); setModel(o.value); }} className={`rounded-btn border-2 p-3 text-left transition-colors ${source === "local" && model === o.value ? "border-ink bg-sun/25" : "border-ink/15 hover:border-ink/40"}`}>
-                        <div lang="en" className="font-display text-xl uppercase leading-none">{o.label}</div>
-                        <div className="mt-1 text-xs text-muted">{o.note}</div>
-                        <div className="mt-2 font-mono text-[10px] text-ink/60">Yerel · Ollama</div>
+                  <span className={label}>Karar kaynağı</span>
+                  <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Karar kaynağı">
+                    {[
+                      { v: "local" as const, t: "Yerel", sub: "Ollama · karar modelleri", d: "Tek forward pass, olasılık dağılımı döner. İnternet ve kota gerekmez.", tag: `${local.length} model kurulu` },
+                      { v: "openrouter" as const, t: "OpenRouter", sub: "Bulut · ücretsiz LLM'ler", d: "Kendi API anahtarınla. LLM'den dağılım JSON olarak istenir, daha yavaş.", tag: `${openrouter.length} ücretsiz model` },
+                    ].map((o) => (
+                      <button
+                        key={o.v}
+                        role="radio"
+                        aria-checked={source === o.v}
+                        onClick={() => setSource(o.v)}
+                        className={`rounded-btn border-2 p-4 text-left transition-colors ${source === o.v ? "border-ink bg-sun/25" : "border-ink/15 hover:border-ink/40"}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="font-display text-2xl uppercase leading-none">{o.t}</div>
+                          <span className={`h-4 w-4 shrink-0 rounded-full border-2 ${source === o.v ? "border-ink bg-ink" : "border-ink/30"}`} />
+                        </div>
+                        <div className="mt-1 font-mono text-[11px] text-ink/60">{o.sub}</div>
+                        <p className="mt-2 text-xs text-muted">{o.d}</p>
+                        <div className="mt-2 font-mono text-[10px] font-bold text-ink/70">{o.tag}</div>
                       </button>
                     ))}
-                    <button onClick={() => setSource("openrouter")} className={`rounded-btn border-2 border-dashed p-3 text-left transition-colors ${source === "openrouter" ? "border-ink bg-sun/25" : "border-ink/20 hover:border-ink/40"}`}>
-                      <div className="font-display text-xl uppercase leading-none">OpenRouter</div>
-                      <div className="mt-1 text-xs text-muted">Kendi anahtarınla ücretsiz bir model</div>
-                      <div className="mt-2 font-mono text-[10px] text-ink/60">Bulut · LLM</div>
-                    </button>
                   </div>
-                  {local.length === 0 && <p className="mt-2 text-xs text-short">Ollama'da kurulu karar modeli bulunamadı. `ollama serve` açık mı?</p>}
                 </div>
-                {source === "openrouter" && (
+
+                {source === "local" ? (
+                  <div>
+                    <span className={label}>Ana model (diğer yerel model ikinci görüş verir)</span>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {local.map((o) => (
+                        <button key={o.value} onClick={() => setModel(o.value)} className={`rounded-btn border-2 p-3 text-left transition-colors ${model === o.value ? "border-ink bg-ink/[0.04]" : "border-ink/15 hover:border-ink/40"}`}>
+                          <div lang="en" className="font-display text-xl uppercase leading-none">{o.label}</div>
+                          <div className="mt-1 text-xs text-muted">{o.note}</div>
+                        </button>
+                      ))}
+                    </div>
+                    {local.length === 0 && <p className="mt-2 text-xs text-short">Ollama'da kurulu karar modeli bulunamadı. `ollama serve` açık mı?</p>}
+                  </div>
+                ) : (
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label>
                       <span className={label}>OpenRouter API anahtarı</span>
