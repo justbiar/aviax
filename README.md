@@ -7,6 +7,9 @@
 
 Team1 Türkiye × OKX TR Agentic Hackathon, Ankara, 17 Ekim 2026.
 
+**Canlı demo:** https://aviax.pages.dev (girişte "Demoya geç": hazır OKX demo şirket hesabı, anahtarlar sunucuda kalır)  
+**Avalanche Fuji:** risk masası [ERC-8004 #271](https://testnet.snowtrace.io/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/271), trade ajanı biar [#260](https://testnet.snowtrace.io/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/260)
+
 ## Entegrasyonlar
 
 | | Ne kullanılıyor |
