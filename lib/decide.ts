@@ -74,6 +74,29 @@ export type ModelSpec = string;
 
 export const OLLAMA_URL = () => process.env.OLLAMA_SYSTEMONE_URL || "http://localhost:11434/v1/systemone";
 
+/**
+ * Ollama's MLX runner grows a model's memory by ~0.2 GB per round and never gives it back
+ * (strands-decider reached 10.5 GB from a 2.5 GB fresh load). When a resident model passes
+ * OLLAMA_TRIM_GB and no decision call is in flight, unload it; the next call reloads it clean
+ * in about a second. Checked at most once a minute.
+ */
+const ollama = ((globalThis as typeof globalThis & { __ollamaTrim?: { inflight: number; checkedAt: number } }).__ollamaTrim ??= { inflight: 0, checkedAt: 0 });
+async function trimOllama(endpoint: string) {
+  if (ollama.inflight > 0 || Date.now() - ollama.checkedAt < 60_000) return;
+  ollama.checkedAt = Date.now();
+  try {
+    const base = new URL(endpoint).origin;
+    const limit = Number(process.env.OLLAMA_TRIM_GB || 4) * 1e9;
+    const ps = (await (await fetch(`${base}/api/ps`, { cache: "no-store" })).json()) as { models?: { name: string; size: number }[] };
+    for (const m of ps.models ?? []) {
+      if (m.size <= limit || ollama.inflight > 0) continue;
+      await fetch(`${base}/api/generate`, { method: "POST", body: JSON.stringify({ model: m.name, keep_alive: 0 }), cache: "no-store" });
+    }
+  } catch {
+    /* maintenance is best-effort */
+  }
+}
+
 export function resolveSpec(m: ModelName, spec?: ModelSpec): { prov: Provider; modelId: string; url?: string; key?: string } {
   if (spec) {
     if (spec === "shadow") return { prov: "shadow", modelId: "shadow" };
@@ -100,6 +123,7 @@ export async function decide(model: ModelName, state: string, questions: Record<
     }
   }
   if (prov === "typesafe" || prov === "endpoint") {
+    if (prov === "endpoint") ollama.inflight++;
     try {
       const wire = Object.fromEntries(
         Object.entries(questions).map(([k, q]) => {
@@ -121,6 +145,11 @@ export async function decide(model: ModelName, state: string, questions: Record<
     } catch (e) {
       const shadow = shadowDecide(model, questions);
       return { ...shadow, latencyMs: Math.round(performance.now() - t0), error: (e as Error).message };
+    } finally {
+      if (prov === "endpoint") {
+        ollama.inflight--;
+        void trimOllama(c.url!);
+      }
     }
   }
   const shadow = shadowDecide(model, questions);
