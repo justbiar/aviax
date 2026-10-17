@@ -15,6 +15,7 @@ export async function POST(req: NextRequest) {
   const a = createAgent({
     name: String(b.name).slice(0, 24),
     model: String(b.model || "shadow"),
+    execution: b.execution === "okx" ? "okx" : "paper",
     budget,
     intervalSec: Math.max(30, Number(b.intervalSec) || 300),
     maxLeverage: Math.min(Number(process.env.AGENT_MAX_LEVERAGE || 5), Math.max(1, Number(b.maxLeverage) || 3)),

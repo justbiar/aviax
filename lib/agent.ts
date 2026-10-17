@@ -1,7 +1,7 @@
 import { atkCall, atkData } from "./atk";
 import { decide as decideRaw, isLive, resolveSpec, type Answer, type DecisionResult, type ModelName, type ModelSpec, type Provider, type Question } from "./decide";
 import { computeFeatures, describe, parseCandles, type Features } from "./features";
-import { getOrder, hasOkxKeys, roundLot, roundToTick } from "./okx";
+import { getOrder, getTicker, hasOkxKeys, roundLot, roundToTick } from "./okx";
 import { hasOpenRouter, narrate } from "./openrouter";
 
 export type Stage = "scan" | "features" | "workers" | "pair" | "direction" | "size" | "risk" | "gate" | "execute" | "monitor";
@@ -68,11 +68,15 @@ export type RunOpts = {
   strict?: boolean;
   /** clOrdId prefix so fills can be attributed to an agent. */
   tag?: string;
+  /** Paper execution: decisions and prices are live, fills are simulated at the live price. */
+  paper?: boolean;
 };
+
+export const PAPER_FEE = 0.001;
 
 export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
   const t0 = Date.now();
-  const execute = opts.execute && hasOkxKeys();
+  const execute = opts.execute && (opts.paper || hasOkxKeys());
   const decide = async (m: ModelName, state: string, qs: Record<string, Question>) => {
     const r = await decideRaw(m, state, qs, m === "jev" ? opts.model : undefined);
     if (opts.strict && m === "jev" && r.error) throw new Error(`JEV modeli cevap vermedi (${r.error.slice(0, 120)}). Bu tur atlandı.`);
@@ -291,6 +295,21 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
     return;
   }
   yield { type: "stage", stage: "execute", status: "start" };
+  if (opts.paper) {
+    const t = await getTicker(x.instId);
+    const avgPx = Number(t.askPx) || Number(t.last);
+    const qty = await roundLot(x.instId, (notional / avgPx) * (1 - PAPER_FEE));
+    plan.entry = avgPx;
+    plan.contracts = qty;
+    const ordId = `paper-${Date.now()}`;
+    yield { type: "log", tool: "paper", text: `PAPER alım: ${qty} ${base(x.instId)} @ ${avgPx} (canlı ask fiyatı, %0,1 komisyon)` };
+    yield { type: "log", tool: "paper", text: `PAPER OCO: TP ${tp} / SL ${slPx}, canlı fiyatla izlenecek` };
+    yield { type: "order", ok: true, detail: `PAPER AL ${x.instId} · ${qty} ${base(x.instId)}`, ordId, algoId: ordId, qty, avgPx };
+    yield { type: "stage", stage: "execute", status: "done", note: "paper" };
+    yield* explain(plan, pairP);
+    yield { type: "done", ms: Date.now() - t0, verdict: "executed" };
+    return;
+  }
   const clOrdId = `${opts.tag ?? "aviax"}${Date.now()}`.replace(/[^a-zA-Z0-9]/g, "").slice(0, 32);
   try {
     // 1. Market buy for a USDT amount.

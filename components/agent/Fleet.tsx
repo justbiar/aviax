@@ -10,6 +10,7 @@ export type FleetAgentView = {
   id: string;
   name: string;
   model: string;
+  execution: "paper" | "okx";
   budget: number;
   intervalSec: number;
   maxLeverage: number;
@@ -36,6 +37,7 @@ export function AgentForm({ onCreated }: { onCreated: (id: string) => void }) {
   const [name, setName] = useState("");
   const [model, setModel] = useState(MODEL_OPTIONS[0].value);
   const [budget, setBudget] = useState(200);
+  const [execution, setExecution] = useState<"paper" | "okx">("paper");
   const [intervalSec, setIntervalSec] = useState(300);
   const [universe, setUniverse] = useState(6);
   const [maxHoldMin, setMaxHoldMin] = useState(240);
@@ -52,7 +54,7 @@ export function AgentForm({ onCreated }: { onCreated: (id: string) => void }) {
       const r = await fetch("/api/fleet", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name || `Ajan ${Math.floor(Math.random() * 90 + 10)}`, model, budget, intervalSec, maxLeverage: 1, universe, maxHoldMin }),
+        body: JSON.stringify({ name: name || `Ajan ${Math.floor(Math.random() * 90 + 10)}`, model, execution, budget, intervalSec, maxLeverage: 1, universe, maxHoldMin }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
@@ -101,7 +103,14 @@ export function AgentForm({ onCreated }: { onCreated: (id: string) => void }) {
       <AnimatePresence initial={false}>
         {adv && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3, ease: EASE }} className="overflow-hidden">
-            <div className="mt-4 grid gap-3 border-t border-ink/10 pt-4 sm:grid-cols-3">
+            <div className="mt-4 grid gap-3 border-t border-ink/10 pt-4 sm:grid-cols-4">
+              <label>
+                <span className={label}>Yürütme</span>
+                <select className={field} value={execution} onChange={(e) => setExecution(e.target.value as "paper" | "okx")}>
+                  <option value="paper">Paper (canlı fiyat)</option>
+                  <option value="okx">OKX demo emri</option>
+                </select>
+              </label>
               <label>
                 <span className={label}>Tur aralığı</span>
                 <select className={field} value={intervalSec} onChange={(e) => setIntervalSec(Number(e.target.value))}>
@@ -182,7 +191,9 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
       <div className="flex items-start justify-between gap-2">
         <button onClick={onSelect} className="min-w-0 text-left">
           <div className="truncate font-display text-2xl uppercase leading-none tracking-wide">{a.name}</div>
-          <div className="mt-1 truncate font-mono text-[11px] text-muted">{modelLabel(a.model)}</div>
+          <div className="mt-1 truncate font-mono text-[11px] text-muted">
+            {modelLabel(a.model)} · {a.execution === "okx" ? "OKX demo" : "paper"}
+          </div>
         </button>
         <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${ph.c}`}>
           {a.phase === "thinking" && a.status === "running" && <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-ink align-middle" />}

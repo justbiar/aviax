@@ -38,6 +38,8 @@ export type FleetAgent = {
   id: string;
   name: string;
   model: string;
+  /** "paper": live prices, simulated fills. "okx": real orders on the OKX demo account. */
+  execution: "paper" | "okx";
   budget: number;
   intervalSec: number;
   maxLeverage: number;
@@ -59,7 +61,7 @@ export type FleetAgent = {
   events: AgentEvent[];
 };
 
-export type NewAgent = Pick<FleetAgent, "name" | "model" | "budget" | "intervalSec" | "maxLeverage" | "universe" | "maxHoldMin">;
+export type NewAgent = Pick<FleetAgent, "name" | "model" | "execution" | "budget" | "intervalSec" | "maxLeverage" | "universe" | "maxHoldMin">;
 
 type Store = { agents: Map<string, FleetAgent>; busy: Set<string>; timer?: NodeJS.Timeout; loaded: boolean };
 const g = globalThis as typeof globalThis & { __fleet?: Store };
@@ -72,7 +74,7 @@ function load() {
   store.loaded = true;
   try {
     const raw = JSON.parse(fs.readFileSync(FILE, "utf8")) as FleetAgent[];
-    for (const a of raw) store.agents.set(a.id, { ...a, events: [], runId: 0, phase: a.position ? "in_position" : "idle", upl: 0 });
+    for (const a of raw) store.agents.set(a.id, { ...a, execution: a.execution ?? "okx", events: [], runId: 0, phase: a.position ? "in_position" : "idle", upl: 0 });
   } catch {
     /* first start */
   }
@@ -158,7 +160,7 @@ export async function agentAction(id: string, action: "start" | "pause" | "close
 async function tick() {
   load();
   const agents = [...store.agents.values()];
-  if (agents.length === 0 || !hasOkxKeys()) return;
+  if (agents.length === 0) return;
 
   for (const a of agents) {
     if (store.busy.has(a.id)) continue;
@@ -167,6 +169,7 @@ async function tick() {
       continue;
     }
     if (a.status !== "running") continue;
+    if (a.execution === "okx" && !hasOkxKeys()) continue;
     if (Date.now() < a.nextRunAt) {
       if (a.phase !== "error") a.phase = a.trades.length ? "cooldown" : "idle";
       continue;
@@ -184,7 +187,13 @@ async function tick() {
 const FEE = 0.001; // OKX spot taker fee per side, used when the exact fill is not available
 
 /** Market-sells the agent's spot quantity after cancelling its OCO. Returns the fill price. */
+const isPaper = (t: Trade) => Boolean(t.algoId?.startsWith("paper"));
+
 async function exitPosition(t: Trade) {
+  if (isPaper(t)) {
+    const tk = await getTicker(t.instId);
+    return Number(tk.bidPx) || Number(tk.last);
+  }
   if (t.algoId) await cancelAlgo(t.instId, t.algoId).catch(() => null);
   const r = await placeOrder({ instId: t.instId, side: "sell", ordType: "market", sz: t.qty, tdMode: "cash" });
   const fill = await getOrder(t.instId, r[0].ordId).catch(() => null);
@@ -204,6 +213,15 @@ async function trackPosition(a: FleetAgent) {
     // Manual close request or time stop.
     reason = t.reason ?? "timeout";
     exit = await exitPosition(t);
+  } else if (isPaper(t)) {
+    // Simulated OCO: trigger on the live price, fill at the trigger level.
+    if (last >= t.tp) {
+      exit = t.tp;
+      reason = "tp";
+    } else if (last <= t.sl) {
+      exit = t.sl;
+      reason = "sl";
+    }
   } else if (t.algoId) {
     const algo = await getAlgoOrder(t.algoId).catch(() => null);
     if (algo && (algo.state === "effective" || algo.state === "partially_effective")) {
@@ -253,6 +271,7 @@ async function cycle(a: FleetAgent) {
       exclude: held,
       strict: a.model !== "shadow",
       tag: `av${a.id}`,
+      paper: a.execution === "paper",
     })) {
       a.events.push(ev);
       if (ev.type === "plan") plan = ev.plan;
