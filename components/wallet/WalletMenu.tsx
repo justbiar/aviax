@@ -36,6 +36,8 @@ export function WalletMenu() {
   };
 
   const empty = w.address && (w.avax ?? 0) < 0.03;
+  const [isPublic, setIsPublic] = useState(false);
+  useEffect(() => setIsPublic(!/^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)), []);
 
   return (
     <div ref={box} className="relative">
@@ -60,7 +62,7 @@ export function WalletMenu() {
                 <div className="font-bold">Cüzdan ile bağlan</div>
                 <div className="text-xs text-muted">{w.hasInjected ? "Core veya MetaMask. Ajan fonlamasını sen onaylarsın." : "Tarayıcıda Core veya MetaMask bulunamadı."}</div>
               </button>
-              <button onClick={() => w.createAgentic()} disabled={w.busy} className="w-full rounded-btn border-2 border-ink bg-sun/25 p-3 text-left transition-colors hover:bg-sun/40 disabled:opacity-60">
+              <button onClick={() => w.createAgentic()} disabled={w.busy || isPublic} title={isPublic ? "Sadece sunum makinesinden" : undefined} className="w-full rounded-btn border-2 border-ink bg-sun/25 p-3 text-left transition-colors hover:bg-sun/40 disabled:opacity-50">
                 <div className="font-bold">Agentic wallet oluştur</div>
                 <div className="text-xs text-muted">Uygulama senin için bir Fuji cüzdanı açar. Bir kez doldurursun, ajanları o fonlar ve x402 ile itibarı otomatik yönetir.</div>
               </button>

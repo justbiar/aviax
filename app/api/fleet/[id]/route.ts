@@ -8,6 +8,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   ensureFleet();
   const { id } = await params;
   const { action } = await req.json();
+  if (action === "launch" && req.headers.get("x-aviax-public") === "1") return NextResponse.json({ error: "Fuji kaydı sadece sunum makinesinden yapılır" }, { status: 403 });
   if (!["start", "pause", "close", "delete", "run", "launch"].includes(action)) return NextResponse.json({ error: "bad action" }, { status: 400 });
   try {
     await agentAction(id, action);

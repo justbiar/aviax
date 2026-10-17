@@ -4,7 +4,7 @@ import type { Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { runAgent, type AgentEvent, type Plan } from "./agent";
 import { balances, fundAvax, fundUsdc, giveFeedback, hasChain, mandateHash, registerAgent, txUrl, usdcBalance } from "./chain";
-import { CYCLE_PRICE_USDC, payAndFetch } from "./x402";
+import { CYCLE_PRICE_USDC, X402_ENABLED, payAndFetch } from "./x402";
 import { cancelAlgo, getAlgoOrder, getOrder, getTicker, hasOkxKeys, placeOrder } from "./okx";
 
 /**
@@ -469,7 +469,7 @@ async function cycle(a: FleetAgent) {
   const held = [...store.agents.values()].filter((x) => x.id !== a.id && x.position).map((x) => x.position!.instId);
 
   // x402: the agent pays for its decision cycle before it may run.
-  if (a.chain.status === "registered") {
+  if (a.chain.status === "registered" && X402_ENABLED()) {
     const t0 = Date.now();
     a.events.push(Object.assign({ type: "log", tone: "info", tool: "x402", text: `Karar turu ücreti: ${CYCLE_PRICE_USDC} USDC · 402 → EIP-3009 imza → Fuji settle` } as AgentEvent, { ts: t0 }));
     try {

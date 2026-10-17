@@ -18,6 +18,13 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
   const [step, setStep] = useState(0);
   const [options, setOptions] = useState<ModelOption[]>([]);
   const w = useWallet();
+  // Public tunnel visitors build agents without the operator's Fuji funds.
+  const [isPublic, setIsPublic] = useState(false);
+  useEffect(() => {
+    const pub = !/^(localhost|127\.0\.0\.1)$/.test(window.location.hostname);
+    setIsPublic(pub);
+    if (pub) setOnFuji(false);
+  }, []);
   const [launchNote, setLaunchNote] = useState<string | null>(null);
 
   // step 1
@@ -114,6 +121,7 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
       onLaunched(j.id);
+      if (j.note) setLaunchNote(j.note);
       if (onFuji && w.mode === "browser") {
         // The user's own wallet funds the new agent wallet; the server waits for it.
         setLaunchNote("Cüzdanında iki işlemi onayla: gas için AVAX ve x402 için USDC.");
@@ -339,10 +347,14 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
                     {!lowGas && lowUsdc && <p className="font-semibold text-orange-600">Cüzdanda USDC az: x402 ödemeleri için Circle faucet'ten Fuji USDC al.</p>}
                   </div>
                 </div>
-                <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold">
-                  <input type="checkbox" checked={onFuji} onChange={(e) => setOnFuji(e.target.checked)} className="h-4 w-4 accent-[rgb(var(--ink))]" />
-                  Fuji'ye kaydet (ERC-8004 kimlik, x402 ödeme, itibar)
-                </label>
+                {isPublic ? (
+                  <p className="rounded-btn bg-ink/[0.04] px-3 py-2 text-xs text-muted">Herkese açık demoda ajanlar zincir kaydı olmadan çalışır. Fuji kaydını sunum makinesinden canlı gösteriyoruz.</p>
+                ) : (
+                  <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold">
+                    <input type="checkbox" checked={onFuji} onChange={(e) => setOnFuji(e.target.checked)} className="h-4 w-4 accent-[rgb(var(--ink))]" />
+                    Fuji'ye kaydet (ERC-8004 kimlik ve itibar)
+                  </label>
+                )}
               </div>
             )}
           </motion.div>

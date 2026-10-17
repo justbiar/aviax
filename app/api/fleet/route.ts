@@ -38,9 +38,10 @@ export async function POST(req: NextRequest) {
       maxDrawdownPct: num(m.maxDrawdownPct, 15, 1, 100),
       minGate: num(m.minGate, 0.55, 0.5, 0.95),
     },
-    launchOnFuji: b.launchOnFuji !== false,
+    // Public visitors run agents without spending the operator's Fuji funds.
+    launchOnFuji: b.launchOnFuji !== false && req.headers.get("x-aviax-public") !== "1",
     funding: b.funding === "browser" ? "browser" : "agentic",
     owner: typeof b.owner === "string" && /^0x[0-9a-fA-F]{40}$/.test(b.owner) ? (b.owner as `0x${string}`) : null,
   });
-  return NextResponse.json({ id: a.id, chain: a.chain.status, wallet: a.chain.wallet });
+  return NextResponse.json({ id: a.id, chain: a.chain.status, wallet: a.chain.wallet, note: req.headers.get("x-aviax-public") === "1" && b.launchOnFuji !== false ? "Herkese açık demoda Fuji kaydı kapalı; ajan zincir kaydı olmadan çalışıyor." : undefined });
 }

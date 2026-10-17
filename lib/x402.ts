@@ -10,6 +10,8 @@ import { FUJI, USDC_ABI, operatorAccount, operatorPk, publicClient, walletFor } 
 
 export const X402_NETWORK = "avalanche-fuji";
 /** Per-cycle decision price: covers model inference + settlement, paid win or lose. */
+/** x402 cycle payments can be paused (X402_ENABLED=1 to turn them on). */
+export const X402_ENABLED = () => process.env.X402_ENABLED === "1";
 export const CYCLE_PRICE_USDC = Number(process.env.X402_CYCLE_PRICE_USDC || 0.001);
 
 export type PaymentRequirements = {
