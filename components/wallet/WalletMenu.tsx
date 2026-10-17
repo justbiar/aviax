@@ -1,9 +1,68 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useWallet } from "./WalletProvider";
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+type OkxAccount = { configured: boolean; balance?: { totalEq: string } | null; assets?: { ccy: string; eq: string; eqUsd?: string }[]; errors?: string[] };
+
+/** OKX demo account linked on the server (API keys in .env.local): equity and assets. */
+function OkxSection({ open }: { open: boolean }) {
+  const [acct, setAcct] = useState<OkxAccount | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    const load = () => fetch("/api/account", { cache: "no-store" }).then((r) => r.json()).then((j) => alive && setAcct(j)).catch(() => null);
+    load();
+    const id = setInterval(load, 8000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [open]);
+
+  const assets = (acct?.assets ?? []).filter((a) => Number(a.eqUsd ?? 0) >= 0.01).sort((x, y) => Number(y.eqUsd ?? 0) - Number(x.eqUsd ?? 0));
+  const fmt = (v: string | number, d: number) => Number(v).toLocaleString("en-US", { maximumFractionDigits: d });
+
+  return (
+    <div className="space-y-2 border-t border-ink/10 pt-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="grid h-6 w-6 place-items-center rounded-md bg-ink font-display text-[10px] text-paper">OKX</span>
+          <span className="text-xs font-bold uppercase tracking-wider text-muted">Demo hesap</span>
+        </div>
+        <span className={`flex items-center gap-1.5 text-[11px] font-semibold ${acct?.configured ? "text-long" : "text-muted"}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${acct?.configured ? "bg-long" : "bg-ink/25"}`} />
+          {acct === null ? "yükleniyor" : acct.configured ? "bağlı" : "bağlı değil"}
+        </span>
+      </div>
+      {acct?.configured && acct.balance && (
+        <>
+          <div className="rounded-btn bg-ink/[0.04] p-2">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">Toplam varlık</div>
+            <div className="font-mono text-lg font-bold num">${fmt(acct.balance.totalEq, 2)}</div>
+          </div>
+          <div className="max-h-[150px] space-y-1 overflow-y-auto scroll-thin">
+            {assets.map((a) => (
+              <div key={a.ccy} className="flex items-center justify-between font-mono text-xs">
+                <span className="font-bold">{a.ccy}</span>
+                <span className="text-ink/70">{fmt(a.eq, a.ccy === "USDT" || a.ccy === "TRY" ? 2 : 6)}</span>
+                <span className="w-20 text-right text-muted">${fmt(a.eqUsd ?? 0, 2)}</span>
+              </div>
+            ))}
+          </div>
+          <Link href="/trade" className="block rounded-btn border border-ink/15 py-2 text-center text-xs font-bold hover:border-ink">
+            Trade ekranında aç →
+          </Link>
+        </>
+      )}
+      {acct && !acct.configured && <p className="text-xs text-muted">OKX demo API anahtarları .env.local'de tanımlı değil.</p>}
+      {acct?.errors && acct.errors.length > 0 && <p className="text-xs text-short">{acct.errors[0]}</p>}
+    </div>
+  );
+}
 
 /** Deterministic two-colour avatar from the address. */
 function Avatar({ address, size = 24 }: { address: string; size?: number }) {
@@ -54,7 +113,7 @@ export function WalletMenu() {
       )}
 
       {open && (
-        <div className="absolute right-0 top-12 z-50 w-[300px] rounded-card border border-ink/15 bg-paper p-3 shadow-card">
+        <div className="absolute right-0 top-12 z-50 max-h-[calc(100vh-80px)] w-[300px] overflow-y-auto rounded-card border border-ink/15 bg-paper p-3 shadow-card scroll-thin">
           {!w.address ? (
             <div className="space-y-2">
               <div className="px-1 text-xs font-bold uppercase tracking-wider text-muted">Avalanche Fuji</div>
@@ -67,6 +126,7 @@ export function WalletMenu() {
                 <div className="text-xs text-muted">Uygulama senin için bir Fuji cüzdanı açar. Bir kez doldurursun, ajanları o fonlar ve x402 ile itibarı otomatik yönetir.</div>
               </button>
               {w.error && <p className="px-1 text-xs text-short">{w.error}</p>}
+              <OkxSection open={open} />
             </div>
           ) : (
             <div className="space-y-3">
@@ -104,6 +164,7 @@ export function WalletMenu() {
                   Bağlantıyı kes
                 </button>
               </div>
+              <OkxSection open={open} />
             </div>
           )}
         </div>

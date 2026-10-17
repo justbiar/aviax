@@ -55,25 +55,7 @@ export function Nav() {
             );
           })}
         </nav>
-        <div ref={box} className="relative ml-auto">
-          <button onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex min-h-[40px] items-center gap-2 rounded-btn px-3 text-sm font-semibold text-ink/70 transition-colors hover:bg-ink/5 hover:text-ink">
-            <span className={`h-2 w-2 rounded-full ${s ? (healthy ? "bg-long" : "bg-short") : "bg-ink/20"}`} />
-            <span className="hidden sm:inline">{s?.demo === false ? "Canlı" : "Demo"}</span>
-          </button>
-          {open && s && (
-            <div className="absolute right-0 top-12 w-64 rounded-card border border-ink/15 bg-paper p-2 shadow-card">
-              {rows.map((r) => (
-                <div key={r.k} className="flex items-center justify-between rounded-[8px] px-2 py-2 text-sm">
-                  <span className="font-semibold">{r.k}</span>
-                  <span className="flex items-center gap-1.5 text-muted">
-                    {r.v}
-                    <span className={`h-1.5 w-1.5 rounded-full ${r.ok ? "bg-long" : "bg-ink/25"}`} />
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <div className="ml-auto" />
         <WalletMenu />
       </div>
     </header>
