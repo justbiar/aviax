@@ -274,8 +274,14 @@ async function launchOnChain(a: FleetAgent) {
       c.status = "launching";
       save();
     } else {
-      const fundTx = await fundAvax(c.wallet, process.env.FUJI_AGENT_GAS_AVAX || "0.02");
-      chainLog(a, "fund", "Agentic wallet → ajan cüzdanı 0.02 AVAX (gas)", txUrl(fundTx));
+      // A retry after a failed register must not fund the agent wallet a second time.
+      const have = await balances(c.wallet).catch(() => ({ avax: 0, usdc: 0 }));
+      if (have.avax >= 0.01) {
+        chainLog(a, "info", `Ajan cüzdanında yeterli gas var (${have.avax.toFixed(3)} AVAX), yeniden fonlanmadı`);
+      } else {
+        const fundTx = await fundAvax(c.wallet, process.env.FUJI_AGENT_GAS_AVAX || "0.02");
+        chainLog(a, "fund", "Agentic wallet → ajan cüzdanı 0.02 AVAX (gas)", txUrl(fundTx));
+      }
       save();
     }
 

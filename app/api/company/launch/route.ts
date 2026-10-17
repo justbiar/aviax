@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCompanySession, getCompanySessionId, updateCompanySession } from "@/lib/companySession";
-import { createAgent, ensureFleet, getAgent, agentAction, type NewAgent } from "@/lib/fleet";
-import { addrUrl, balances, mandateHash } from "@/lib/chain";
+import { createAgent, ensureFleet, getAgent, agentAction, listAgents, type NewAgent } from "@/lib/fleet";
+import { addrUrl, balances, mandateHash, operatorKind } from "@/lib/chain";
 import { DEFAULT_POLICY } from "@/lib/riskDesk";
 
 export const runtime = "nodejs";
@@ -33,9 +33,44 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ connected: true, agent, balance });
 }
 
+/** Owner mode (localhost, host .env account): the host company's risk desk, gas paid by the operator wallet. */
+const OWNER_COMPANY = "Aviax Yapım İşleri LTD ŞTİ";
+function launchOwnerDesk() {
+  ensureFleet();
+  const found = listAgents().find((a) => a.decisionOnly && a.companyName === OWNER_COMPANY);
+  if (found) {
+    if (found.chain.status === "failed") void agentAction(found.id, "launch");
+    return NextResponse.json({ agent: publicAgent(found.id), reused: true });
+  }
+  const op = operatorKind();
+  const policy = DEFAULT_POLICY;
+  const agent = createAgent({
+    name: "Aviax Yapım Risk Masası",
+    model: "ollama:strands-decider",
+    validator: "ollama:laya",
+    openrouterKey: undefined,
+    mandate: { allowed: [], maxTradeUsdt: policy.approvalUsd, maxDailyTrades: 100, maxDrawdownPct: policy.maxDrawdown, minGate: 0.55 },
+    execution: "okx",
+    budget: 10,
+    intervalSec: 86_400,
+    maxLeverage: 1,
+    universe: 3,
+    maxHoldMin: 1440,
+    launchOnFuji: true,
+    funding: "agentic",
+    owner: null,
+    decisionOnly: true,
+    companyName: OWNER_COMPANY,
+    companyPolicyHash: mandateHash(policy) as `0x${string}`,
+    companyDecisionEndpoint: "/api/risk",
+  });
+  return NextResponse.json({ agent: publicAgent(agent.id), reused: false, operator: op });
+}
+
 export async function POST(req: NextRequest) {
   const id = getCompanySessionId(req.headers.get("cookie"));
   const session = getCompanySession(id);
+  if (!session && req.headers.get("x-aviax-public") !== "1") return launchOwnerDesk();
   if (!session || !id) return NextResponse.json({ error: "Önce şirket hesabını bağla" }, { status: 401 });
   if (session.demo) return NextResponse.json({ error: "Demo hesabında Fuji kaydı kapalı. Kendi şirketini bağlayarak kayıt açabilirsin." }, { status: 403 });
 

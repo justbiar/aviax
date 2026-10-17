@@ -105,7 +105,9 @@ export function mandateHash(mandate: Record<string, unknown>) {
 export async function registerAgent(agentPk: Hex, card: Record<string, unknown>, meta: Record<string, string>) {
   const uri = `data:application/json;base64,${Buffer.from(JSON.stringify(card)).toString("base64")}`;
   const metadata = Object.entries(meta).map(([metadataKey, v]) => ({ metadataKey, metadataValue: toHex(v) }));
-  const hash = await walletFor(agentPk).writeContract({ address: FUJI.identity, abi: IDENTITY_ABI, functionName: "register", args: [uri, metadata] });
+  // Explicit gas limit: a fallback RPC returned a ~59e12 gas estimate for this call, which the
+  // node then rejects as invalid. Registration with a data: URI card fits well under 3M.
+  const hash = await walletFor(agentPk).writeContract({ address: FUJI.identity, abi: IDENTITY_ABI, functionName: "register", args: [uri, metadata], gas: 3_000_000n });
   const receipt = await confirm(hash);
   let agentId: string | null = null;
   for (const log of receipt.logs) {

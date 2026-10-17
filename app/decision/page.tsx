@@ -21,6 +21,13 @@ export default function DecisionPage() {
   const [monitoring, setMonitoring] = useState(true);
   /** Autonomous execution: undisputed model decisions are applied on the OKX demo account. */
   const [autonomous, setAutonomous] = useState(true);
+  /** The company's risk desk identity on Avalanche Fuji (ERC-8004), when registered. */
+  const [deskId, setDeskId] = useState<string | null>(null);
+  useEffect(() => {
+    fetch("/api/fleet", { cache: "no-store" }).then((r) => r.json()).then((list: { decisionOnly?: boolean; companyName?: string; chain?: { agentId: string | null } }[]) => {
+      setDeskId(list.find((a) => a.decisionOnly && a.chain?.agentId)?.chain?.agentId ?? null);
+    }).catch(() => {});
+  }, []);
   const [reviewers, setReviewers] = useState<string[]>([]);
   const [reviewersReady, setReviewersReady] = useState(false);
   const [accountReady, setAccountReady] = useState(false);
@@ -123,6 +130,11 @@ export default function DecisionPage() {
           <span>ana model gecikme <b className="text-ink">{primaryModel ? `${primaryModel.latencyMs}ms` : "-"}</b></span>
           <span>son tur <b className="text-ink">{lastScan ? new Date(lastScan).toLocaleTimeString("tr-TR") : "-"}</b></span>
           <span>son karar <b className="text-ink">{decision?.type === "decision" ? (decision.record.verdict === "yes" ? "MÜDAHALE" : decision.record.verdict === "no" ? "KORU" : "KARARSIZ") : "-"}</b></span>
+          {deskId && (
+            <a href={`https://testnet.snowtrace.io/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/${deskId}`} target="_blank" rel="noreferrer" className="rounded-full border border-ink/20 bg-sun/40 px-2 font-bold text-ink hover:bg-sun">
+              ERC-8004 #{deskId} · Fuji ↗
+            </a>
+          )}
           <span>{stages.at(-1)?.type === "stage" && busy ? (stages.at(-1) as { text: string }).text : ""}</span>
         </div>
       </div>
