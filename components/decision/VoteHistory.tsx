@@ -92,8 +92,8 @@ export function VoteHistory({ refreshKey }: { refreshKey: number | null }) {
         {/* rounds */}
         {entries.length > 0 && (
           <div className="overflow-hidden rounded-card border border-white/10">
-            <div className="hidden grid-cols-[90px_130px_110px_110px_minmax(0,1fr)_120px_110px] gap-3 border-b border-white/10 bg-white/[0.03] px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-white/40 lg:grid">
-              <span>saat</span><span>ortak karar</span><span>risk</span><span>aksiyon</span><span>oylar</span><span>sonraki tur</span><span>onay</span>
+            <div className="hidden grid-cols-[90px_130px_110px_110px_minmax(0,1fr)_120px_150px] gap-3 border-b border-white/10 bg-white/[0.03] px-4 py-2 font-mono text-[10px] uppercase tracking-widest text-white/40 lg:grid">
+              <span>saat</span><span>ortak karar</span><span>risk</span><span>aksiyon</span><span>oylar</span><span>sonraki tur</span><span>sonuç</span>
             </div>
             <div className="max-h-[520px] divide-y divide-white/5 overflow-y-auto scroll-thin">
               {entries.map((e, i) => {
@@ -102,7 +102,7 @@ export function VoteHistory({ refreshKey }: { refreshKey: number | null }) {
                 const isOpen = open === e.id;
                 return (
                   <div key={e.id} className={isOpen ? "bg-white/[0.04]" : ""}>
-                    <button onClick={() => setOpen(isOpen ? null : e.id)} className="grid w-full grid-cols-2 items-center gap-3 px-4 py-2.5 text-left font-mono text-[11px] hover:bg-white/[0.03] lg:grid-cols-[90px_130px_110px_110px_minmax(0,1fr)_120px_110px]">
+                    <button onClick={() => setOpen(isOpen ? null : e.id)} className="grid w-full grid-cols-2 items-center gap-3 px-4 py-2.5 text-left font-mono text-[11px] hover:bg-white/[0.03] lg:grid-cols-[90px_130px_110px_110px_minmax(0,1fr)_120px_150px]">
                       <span className="text-white/55">{time(e.ts)}</span>
                       <span className="font-bold" style={{ color: V[e.verdict]?.c }}>{V[e.verdict]?.t} {pct(e.verdictConfidence)}</span>
                       <span className={e.riskLevel === "critical" ? "text-[rgb(255,80,80)]" : e.riskLevel === "elevated" ? "text-orange-300" : "text-[rgb(0,200,120)]"}>{e.riskLevel}</span>
@@ -115,7 +115,9 @@ export function VoteHistory({ refreshKey }: { refreshKey: number | null }) {
                         ))}
                       </span>
                       <span className={delta === null ? "text-white/35" : delta >= 0 ? "text-[rgb(0,200,120)]" : "text-[rgb(255,80,80)]"}>{delta === null ? "son tur" : `${delta >= 0 ? "+" : ""}${delta.toFixed(3)}%`}</span>
-                      <span className={e.approval ? "text-orange-300" : "text-white/45"}>{e.approval ? "insan onayı" : e.orders ? "politika içi" : "emir yok"}</span>
+                      <span className={e.execution === "executed" ? "font-bold text-[rgb(0,200,120)]" : e.approval ? "text-orange-300" : "text-white/45"}>
+                        {e.execution === "executed" ? `uygulandı · ${usd(e.executedUsd)}` : e.approval ? "insan onayı" : e.execution === "cooldown" ? "yansıma bekleniyor" : e.orders ? "öneri" : "emir yok"}
+                      </span>
                     </button>
                     {isOpen && (
                       <div className="grid gap-3 px-4 pb-4 font-mono text-[11px] lg:grid-cols-[1fr_auto]">

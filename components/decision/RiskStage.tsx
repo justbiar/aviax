@@ -23,7 +23,7 @@ const STEPS = [
   { key: "checks", label: "Limitler", who: "deterministik" },
   { key: "models", label: "Karar modelleri", who: "ana + 2. görüş" },
   { key: "decision", label: "Ortak karar", who: "ensemble" },
-  { key: "approval", label: "Onay", who: "insan / politika" },
+  { key: "approval", label: "Yürütme", who: "OKX demo · ATK" },
   { key: "hash", label: "Kayıt", who: "keccak256" },
 ] as const;
 
@@ -53,6 +53,8 @@ export function RiskStage({ events, busy, lastScan, monitoring }: { events: Risk
   const models = find("models");
   const decision = find("decision");
   const route = find("route");
+  const exec = find("execution");
+  const status = decision?.record.execution?.status;
   const seen = new Set(events.filter((e) => e.type === "stage").map((e) => (e as { stage: string }).stage));
   const chartAsset = portfolio?.holdings.find((h) => !h.reserve)?.ccy;
   const primary = models?.models.find((m) => m.seat === "primary");
@@ -66,7 +68,7 @@ export function RiskStage({ events, busy, lastScan, monitoring }: { events: Risk
     checks: Boolean(checks),
     models: Boolean(models),
     decision: Boolean(decision),
-    approval: Boolean(decision),
+    approval: Boolean(decision) && (status !== "executed" || Boolean(exec)),
     hash: Boolean(decision),
   };
   const activeIdx = busy ? STEPS.findIndex((s) => !done[s.key]) : -1;
@@ -77,7 +79,7 @@ export function RiskStage({ events, busy, lastScan, monitoring }: { events: Risk
     checks: checks ? `${checks.checks.filter((c) => c.status === "breach").length} ihlal` : "",
     models: primary ? `${primary.latencyMs}ms${second ? ` · ${second.latencyMs}ms` : ""}` : "",
     decision: decision ? `${nice(decision.record.verdict)} %${Math.round(decision.record.verdictConfidence * 100)}` : "",
-    approval: decision ? (decision.record.approval.required ? "insan onayı" : decision.record.orders.length ? "politika içinde" : "emir yok") : "",
+    approval: !decision ? "" : status === "executed" ? (exec ? `${exec.fills.filter((f) => f.ok).length} emir gönderildi` : "emirler gidiyor") : status === "approval" ? "insan onayı" : status === "cooldown" ? "yansıma bekleniyor" : status === "advice" ? "sadece öneri" : "emir yok",
     hash: decision ? decision.record.hash.slice(0, 10) : "",
   };
 
@@ -220,30 +222,40 @@ export function RiskStage({ events, busy, lastScan, monitoring }: { events: Risk
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: EASE }} className="grid gap-4 xl:grid-cols-2">
             <div className="space-y-4">
             <div className="rounded-card border border-white/10 bg-white/[0.02] p-4">
-              <h3 className="mb-3 font-display text-xl tracking-wide">Önerilen emirler</h3>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="font-display text-xl tracking-wide">{status === "executed" ? "Uygulanan emirler · OKX demo" : "Emir planı"}</h3>
+                {decision.record.execution?.staged && <span className="font-mono text-[10px] text-sun">kademeli · kalan {usd(decision.record.execution.remainingUsd)} sonraki turlarda</span>}
+              </div>
               {decision.record.orders.length === 0 ? (
                 <p className="font-mono text-xs text-white/50">Emir yok. Portföy politika içinde ve modeller müdahale önermiyor.</p>
               ) : (
                 <div className="space-y-2">
-                  {decision.record.orders.map((o) => (
-                    <div key={o.instId} className="grid grid-cols-[70px_1fr_auto] items-center gap-3 rounded-lg border border-white/10 bg-black/30 px-3 py-2 font-mono text-[11px]">
-                      <span className="font-bold text-short">SAT {o.ccy}</span>
-                      <span className="truncate text-white/55">{o.reason}</span>
-                      <span className="text-right text-white">{usd(o.usd)}</span>
-                    </div>
-                  ))}
+                  {decision.record.orders.map((o) => {
+                    const f = exec?.fills.find((x) => x.instId === o.instId);
+                    return (
+                      <div key={o.instId} className="grid grid-cols-[70px_1fr_auto] items-center gap-3 rounded-lg border border-white/10 bg-black/30 px-3 py-2 font-mono text-[11px]">
+                        <span className="font-bold text-short">SAT {o.ccy}</span>
+                        <span className="truncate text-white/55">{f ? (f.ok ? `${f.qty} ${o.ccy} · ordId ${f.ordId}` : `gönderilemedi: ${f.error}`) : o.reason}</span>
+                        <span className={`text-right ${f?.ok ? "text-[rgb(0,200,120)]" : f ? "text-[rgb(255,80,80)]" : "text-white"}`}>{f?.ok ? "✓ " : ""}{usd(o.usd)}</span>
+                      </div>
+                    );
+                  })}
                   <div className="flex justify-between border-t border-white/10 pt-2 font-mono text-xs">
-                    <span className="text-white/50">toplam stable'a aktarım</span>
+                    <span className="text-white/50">{status === "executed" ? "bu tur stable'a aktarılan" : "bu tur aktarılacak"}</span>
                     <span className="text-sun">{usd(decision.record.sellUsd)}</span>
                   </div>
                 </div>
               )}
-              <p className="mt-3 font-mono text-[10px] text-white/35">Emir miktarlarını kod hesaplar (limitleri geri getiren minimum + modelin seçtiği ek azaltım). Karar motoru OKX'e otomatik emir göndermez.</p>
+              <p className="mt-3 font-mono text-[10px] text-white/35">Miktarları kod hesaplar (limitleri geri getiren minimum + modelin seçtiği ek azaltım), tur başına otonom limit kadar. Karar tartışmasızsa ATK spot_place_order ile OKX demo hesabında uygulanır.</p>
             </div>
-            <div className={`rounded-card border p-4 ${decision.record.approval.required ? "border-orange-300/40 bg-orange-300/[0.06]" : "border-white/10 bg-white/[0.02]"}`}>
-              <h3 className="font-display text-xl tracking-wide">{decision.record.approval.required ? "İnsan onayı gerekli" : decision.record.orders.length ? "Politika içinde" : "Onay gerekmiyor"}</h3>
+            <div className={`rounded-card border p-4 ${status === "approval" ? "border-orange-300/40 bg-orange-300/[0.06]" : status === "executed" ? "border-[rgb(0,200,120)]/40 bg-[rgb(0,200,120)]/[0.05]" : "border-white/10 bg-white/[0.02]"}`}>
+              <h3 className="font-display text-xl tracking-wide">
+                {status === "executed" ? "Model karar verdi · uygulandı" : status === "approval" ? "Tartışmalı karar · insan onayı" : status === "cooldown" ? "Önceki emirler yansıyor" : status === "advice" ? "Sadece öneri" : "Müdahale gerekmiyor"}
+              </h3>
               <ul className="mt-2 space-y-1 font-mono text-[11px] text-white/70">
-                {decision.record.approval.reasons.length ? decision.record.approval.reasons.map((r) => <li key={r}>· {r}</li>) : <li>· model güveni ve uyumu eşiklerin üstünde</li>}
+                {exec && <li className="text-[rgb(0,200,120)]">· {exec.text}</li>}
+                {decision.record.approval.reasons.length ? decision.record.approval.reasons.map((r) => <li key={r}>· {r}</li>) : <li>· modeller anlaştı, güven yeterli, karar kuralla uyumlu</li>}
+                {status === "advice" && <li>· otonom yürütme kapalı veya hesap OKX demo değil</li>}
                 <li>· model ↔ kural kontrolü: {decision.record.modelRuleMatch ? "uyumlu" : "çelişkili"}</li>
                 <li>· model uyumu %{Math.round(decision.record.agreement * 100)} · güven %{Math.round(decision.record.confidence * 100)}</li>
               </ul>
@@ -339,8 +351,12 @@ function Terminal({ events }: { events: RiskEvent[] }) {
     if (e.type === "decision") {
       const r = e.record;
       lines.push({ t: `karar ${nice(r.verdict)} · risk ${nice(r.riskLevel)} · aksiyon ${nice(r.action)} · ${r.orders.length} emir`, tone: "text-sun", tool: "decision" });
-      lines.push({ t: r.approval.required ? `insan onayı: ${r.approval.reasons.join("; ")}` : "otomatik onay eşiği içinde", tone: r.approval.required ? "text-orange-300" : "text-[rgb(0,200,120)]", tool: "approval" });
+      lines.push({ t: r.approval.required ? `insan onayı: ${r.approval.reasons.join("; ")}` : r.orders.length ? "karar tartışmasız · model uygular" : "müdahale yok", tone: r.approval.required ? "text-orange-300" : "text-[rgb(0,200,120)]", tool: "approval" });
       lines.push({ t: r.hash, tone: "text-white/50", tool: "hash" });
+    }
+    if (e.type === "execution") {
+      for (const f of e.fills) lines.push({ t: f.ok ? `SAT ${f.qty} ${f.ccy} · ordId ${f.ordId}` : `${f.ccy}: ${f.error}`, tone: f.ok ? "text-[rgb(0,200,120)]" : "text-[rgb(255,80,80)]", tool: "spot_place_order" });
+      lines.push({ t: e.text, tone: e.status === "executed" ? "text-[rgb(0,200,120)]" : "text-white/60", tool: "yürütme" });
     }
     if (e.type === "error") lines.push({ t: e.text, tone: "text-[rgb(255,80,80)]", tool: "hata" });
   }

@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 
 
 export async function POST(req: NextRequest) {
-  let body: { source?: Source; shock?: Shock; policy?: Policy; companyName?: string; request?: string; reviewers?: string[] };
+  let body: { source?: Source; shock?: Shock; policy?: Policy; companyName?: string; request?: string; reviewers?: string[]; execute?: boolean };
   try { body = await req.json(); } catch { return Response.json({ error: "Geçersiz istek" }, { status: 400 }); }
   const source = body.source ?? "fund";
   const shock = body.shock ?? "none";
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     async start(controller) {
       const round: RiskEvent[] = [];
       try {
-        for await (const event of runRiskDesk({ source, shock, policy, companyName, request: body.request?.trim() || undefined, reviewers: activeReviewers, ...(companySession ? { okxCredentials: companySession.okx, openrouterKey: companySession.openrouterKey, seats } : {}) })) {
+        for await (const event of runRiskDesk({ source, shock, policy, companyName, request: body.request?.trim() || undefined, reviewers: activeReviewers, execute: body.execute !== false, ...(companySession ? { okxCredentials: companySession.okx, openrouterKey: companySession.openrouterKey, seats } : {}) })) {
           if (event.type !== "stage") round.push(event);
           controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
         }

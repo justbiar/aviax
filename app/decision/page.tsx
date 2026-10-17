@@ -19,6 +19,8 @@ export default function DecisionPage() {
   const [companyName, setCompanyName] = useState("Aviax Yapım İşleri LTD ŞTİ");
   const [policy, setPolicy] = useState<Policy>(DEFAULT_COMPANY_POLICY);
   const [monitoring, setMonitoring] = useState(true);
+  /** Autonomous execution: undisputed model decisions are applied on the OKX demo account. */
+  const [autonomous, setAutonomous] = useState(true);
   const [reviewers, setReviewers] = useState<string[]>([]);
   const [reviewersReady, setReviewersReady] = useState(false);
   const [accountReady, setAccountReady] = useState(false);
@@ -45,7 +47,7 @@ export default function DecisionPage() {
     let skipped = false;
     setBusy(true); setError("");
     try {
-      const res = await fetch("/api/risk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "okx" satisfies Source, shock: "none" satisfies Shock, policy, companyName, reviewers }) });
+      const res = await fetch("/api/risk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "okx" satisfies Source, shock: "none" satisfies Shock, policy, companyName, reviewers, execute: autonomous }) });
       // Too-soon or busy turns are skipped quietly; the next 10 s tick runs again.
       if (res.status === 429) { skipped = true; return; }
       if (!res.ok || !res.body) throw new Error((await res.json()).error ?? "İstek başarısız");
@@ -58,7 +60,7 @@ export default function DecisionPage() {
       }
     } catch (e) { setError(e instanceof Error ? e.message : "Risk analizi başarısız"); }
     finally { setBusy(false); runLock.current = false; if (!skipped) setLastScan(Date.now()); }
-  }, [companyName, policy, reviewers]);
+  }, [companyName, policy, reviewers, autonomous]);
   const runRef = useRef(run);
   useEffect(() => { runRef.current = run; }, [run]);
   useEffect(() => {
@@ -99,7 +101,7 @@ export default function DecisionPage() {
           </span>
         </motion.h1>
         <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.6, delay: 0.25 }} className="mx-auto mt-5 max-w-[680px] text-lg font-medium text-ink/75 sm:text-xl">
-          {companyName} OKX bakiyesi 10 saniyede bir okunur. Limitleri kod ölçer, müdahale kararını iki karar modeli olasılık dağılımı olarak verir. Büyük kararlar insan onayına düşer.
+          {companyName} OKX bakiyesi 10 saniyede bir okunur. Limitleri kod ölçer, müdahale kararını iki karar modeli verir ve politika içindeyse OKX demo hesabında kendisi uygular. İnsana sadece tartışmalı kararlar gider.
         </motion.p>
 
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: EASE, delay: 0.35 }} className="mx-auto mt-8 max-w-[860px] rounded-card border border-ink/15 bg-paper p-5 text-left shadow-card sm:p-6">
@@ -107,11 +109,12 @@ export default function DecisionPage() {
             <label className="text-xs font-bold uppercase tracking-wider text-ink/55">Şirket / kurum<input value={companyName} maxLength={64} onChange={(e) => setCompanyName(e.target.value)} className={input} placeholder="Örn. Aviax Yapım İşleri LTD ŞTİ" /></label>
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={() => setMonitoring((x) => !x)} className={`min-h-[40px] rounded-btn border px-3 text-xs font-bold ${monitoring ? "border-long/40 bg-long/10 text-long" : "border-ink/20 text-ink/60"}`}>● {monitoring ? "İZLEME AÇIK · DURAKLAT" : "İZLEMEYİ BAŞLAT"}</button>
+              <button onClick={() => setAutonomous((x) => !x)} className={`min-h-[40px] rounded-btn border px-3 text-xs font-bold ${autonomous ? "border-ink bg-ink text-sun" : "border-ink/20 text-ink/60"}`} title="Tartışmasız model kararları OKX demo hesabında uygulanır">{autonomous ? "OTONOM YÜRÜTME AÇIK" : "SADECE ÖNERİ"}</button>
               <button onClick={() => void run()} disabled={busy} className="min-h-[40px] rounded-btn border-2 border-ink bg-sun px-4 text-sm font-bold shadow-btn disabled:opacity-50">{busy ? "Tur çalışıyor…" : "Şimdi değerlendir"}</button>
             </div>
           </div>
           <div className="mt-4 text-xs font-bold uppercase tracking-wider text-ink/55">Risk politikası (yetki)</div>
-          <div className="mt-2 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">{([["maxWeight", "Varlık üst sınırı %"], ["maxDrawdown", "Maks. düşüş %"], ["minReserve", "Min. rezerv %"], ["maxVol", "Maks. oynaklık %"], ["approvalUsd", "İnsan onay eşiği $"]] as [keyof Policy, string][]).map(([key, title]) => <label key={key} className="text-[11px] font-semibold text-ink/60">{title}<input type="number" min={0} value={policy[key]} onChange={(e) => setPolicy((p) => ({ ...p, [key]: Number(e.target.value) }))} className={input} /></label>)}</div>
+          <div className="mt-2 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">{([["maxWeight", "Varlık üst sınırı %"], ["maxDrawdown", "Maks. düşüş %"], ["minReserve", "Min. rezerv %"], ["maxVol", "Maks. oynaklık %"], ["approvalUsd", "Tur başına otonom işlem $"]] as [keyof Policy, string][]).map(([key, title]) => <label key={key} className="text-[11px] font-semibold text-ink/60">{title}<input type="number" min={0} value={policy[key]} onChange={(e) => setPolicy((p) => ({ ...p, [key]: Number(e.target.value) }))} className={input} /></label>)}</div>
           {error && <p className="mt-4 rounded-btn border border-short/30 bg-short/5 p-3 text-sm text-short">{error}</p>}
         </motion.div>
         <div className="mt-4 flex flex-wrap justify-center gap-x-6 gap-y-1 font-mono text-xs text-muted">

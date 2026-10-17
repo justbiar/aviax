@@ -6,7 +6,7 @@ const BASE = "https://www.okx.com";
 export const hasOkxKeys = () =>
   Boolean(process.env.OKX_API_KEY && process.env.OKX_SECRET_KEY && process.env.OKX_PASSPHRASE);
 
-const isDemo = () => process.env.OKX_DEMO !== "0";
+export const isDemo = () => process.env.OKX_DEMO !== "0";
 
 type OkxResp<T> = { code: string; msg: string; data: T };
 
@@ -126,13 +126,14 @@ export type PlaceOrderInput = {
   slTriggerPx?: string;
 };
 
-export async function placeOrder(o: PlaceOrderInput) {
+export async function placeOrder(o: PlaceOrderInput, credentials?: OkxCredentials) {
   const attachAlgoOrds =
     o.tpTriggerPx || o.slTriggerPx
       ? [{ tpTriggerPx: o.tpTriggerPx, tpOrdPx: o.tpTriggerPx ? "-1" : undefined, slTriggerPx: o.slTriggerPx, slOrdPx: o.slTriggerPx ? "-1" : undefined }]
       : undefined;
   return request<{ ordId: string; sCode: string; sMsg: string }[]>("POST", "/api/v5/trade/order", {
     auth: true,
+    credentials,
     body: {
       instId: o.instId,
       tdMode: o.tdMode ?? "cash",

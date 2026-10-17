@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import { atkCall, atkData } from "./atk";
 import { parseCandles } from "./features";
-import { getBalance, hasOkxKeys } from "./okx";
+import { getBalance, getInstrument, hasOkxKeys, isDemo, placeOrder, roundLot } from "./okx";
 import type { OkxCredentials } from "./companySession";
 import { ask, recordHash, route, type LayerAnswer, type Seats } from "./decisionLayer";
 import { decide, type Question } from "./decide";
@@ -8,8 +9,10 @@ import { decide, type Question } from "./decide";
 /**
  * Risk desk: the worked example of the decision layer.
  * Code does what code is good at (exact limit checks, order sizing); decision models do the
- * judgement (risk level, response class, how much to de-risk). Anything large, uncertain or
- * contested goes to a human approval queue before OKX execution and Fuji anchoring.
+ * judgement (risk level, response class, how much to de-risk) and their decision is executed
+ * on the OKX demo account within the mandate. Large corrections are staged over rounds; only a
+ * contested or drastic decision (disagreement, low confidence, model vs rule conflict, full exit)
+ * waits for a human.
  */
 
 export type Policy = { maxWeight: number; maxDrawdown: number; minReserve: number; maxVol: number; approvalUsd: number };
@@ -45,10 +48,17 @@ export type RiskEvent =
   | { type: "checks"; checks: Check[]; vol: number; drawdown: number; var95: number; series: number[] }
   | { type: "models"; state: string; answers: Record<string, LayerAnswer>; models: { seat: string; modelId: string; source: string; latencyMs: number; error?: string }[]; reviewers: ReviewerOpinion[] }
   | { type: "decision"; record: DecisionRecord }
+  | { type: "execution"; status: Execution["status"]; fills: Fill[]; text: string }
   | { type: "error"; text: string }
   | { type: "done" };
 
+export type Fill = { instId: string; ccy: string; qty: string; usd: number; ok: boolean; ordId?: string; error?: string };
+/** executed: models decided and orders went to OKX demo · approval: contested, waits for a human ·
+ * advice: execution off or not the live account · cooldown: previous orders still settling · none: nothing to do */
+export type Execution = { status: "executed" | "approval" | "advice" | "cooldown" | "none"; staged: boolean; remainingUsd: number };
+
 export type DecisionRecord = {
+  execution: Execution;
   id: string;
   ts: number;
   desk: "risk";
@@ -73,6 +83,10 @@ export type DecisionRecord = {
 };
 
 const CUT: Record<string, number> = { none: 0, small: 0.1, half: 0.5, all: 1 };
+/** Wait between executions so the next round sees the settled balance and never double-sells. */
+const EXEC_COOLDOWN_MS = 45_000;
+const restricted = ((globalThis as typeof globalThis & { __riskRestricted?: Set<string> }).__riskRestricted ??= new Set<string>());
+const execState = ((globalThis as typeof globalThis & { __riskExec?: Map<string, number> }).__riskExec ??= new Map<string, number>());
 const reviewerState = globalThis as typeof globalThis & {
   __riskReviewerCache?: Map<string, { at: number; opinion: ReviewerOpinion }>;
   __riskReviewerTurn?: number;
@@ -116,7 +130,7 @@ const status = (v: number, limit: number, dir: "max" | "min"): Check["status"] =
   return v < limit ? "breach" : v < limit * 1.15 ? "near" : "ok";
 };
 
-export async function* runRiskDesk(opts: { source: Source; shock: Shock; policy: Policy; companyName?: string; request?: string; seats?: Seats; reviewers?: string[]; okxCredentials?: OkxCredentials; openrouterKey?: string }): AsyncGenerator<RiskEvent> {
+export async function* runRiskDesk(opts: { source: Source; shock: Shock; policy: Policy; companyName?: string; request?: string; seats?: Seats; reviewers?: string[]; okxCredentials?: OkxCredentials; openrouterKey?: string; execute?: boolean }): AsyncGenerator<RiskEvent> {
   const { policy, shock } = opts;
   const companyName = opts.companyName?.trim().slice(0, 64) || "Şirket hazinesi";
 
@@ -267,24 +281,47 @@ export async function* runRiskDesk(opts: { source: Source; shock: Shock; policy:
       const usd = Math.min(s.usd, h.usd);
       return { instId: `${ccy}-USDT`, ccy, side: "sell" as const, qty: usd / h.px, usd, reason: [...new Set(s.reasons)].join(" · ") };
     })
-    .filter((o) => o.usd >= 1);
+    // Pairs the exchange refuses (e.g. OKX TR compliance) are left out instead of retried every round.
+    .filter((o) => o.usd >= 1 && !restricted.has(o.instId));
+  // Large corrections are staged: at most policy.approvalUsd per round, the rest in later rounds.
+  const neededUsd = orders.reduce((t, o) => t + o.usd, 0);
+  const cap = Math.max(0, policy.approvalUsd);
+  const staged = cap > 0 && neededUsd > cap;
+  if (staged) for (const o of orders) { const f = cap / neededUsd; o.usd *= f; o.qty *= f; }
   const sellUsd = orders.reduce((t, o) => t + o.usd, 0);
 
   // 6. Governance: when does a human have to sign off?
   const modelRuleMatch = a.breach.pick === "yes" === breaches.length > 0;
-  const confidence = Math.min(a.risk_level.confidence, a.action.confidence);
-  const agreement = Math.min(a.risk_level.agreement, a.action.agreement);
+  // The committee's vote is the intervene question; action/cut only size the orders.
+  const confidence = verdictConfidence;
+  const agreement = a.verdict.agreement;
   const reasons: string[] = [];
-  if (["derisk", "exit"].includes(a.action.pick)) reasons.push(`aksiyon "${a.action.pick}" geniş kapsamlı`);
-  if (sellUsd > policy.approvalUsd) reasons.push(`satış ${Math.round(sellUsd).toLocaleString("tr-TR")} USD > onay eşiği ${policy.approvalUsd.toLocaleString("tr-TR")} USD`);
+  // Models decide; a human is asked only when the decision itself is contested or drastic.
+  if (a.action.pick === "exit") reasons.push("tam çıkış (exit) uç bir karar, insan onayı ister");
+  if (verdict === "no" && orders.length) reasons.push("modeller müdahale istemiyor ama kurallar ihlalde");
   if (confidence < 0.55) reasons.push(`düşük güven (%${Math.round(confidence * 100)})`);
-  if (agreement < 0.5) reasons.push("modeller anlaşamadı");
+  if (agreement < 0.5) reasons.push("modeller müdahale sorusunda anlaşamadı");
   if (verdict === "uncertain") reasons.push("evet/hayır kararı belirsiz, insan değerlendirmesi gerekli");
   if (liveReviewers.some((r) => (r.answers.verdict?.yes ?? 0) > 0.5) && liveReviewers.some((r) => (r.answers.verdict?.no ?? 0) > 0.5)) reasons.push("OpenRouter danışman modelleri farklı öneriler verdi");
   if (!modelRuleMatch) reasons.push("model ile kural kontrolü çelişiyor");
   const required = orders.length > 0 && reasons.length > 0;
 
+  const autoOk = !required && verdict === "yes" && orders.length > 0;
+  // Cooldown is per OKX account, not per viewer: owner mode and every jury demo session share
+  // the host account, so they must share one execution slot or they would double-sell.
+  const accountKey = opts.okxCredentials?.apiKey ?? process.env.OKX_API_KEY ?? "";
+  const execKey = `okx:${createHash("sha256").update(accountKey).digest("hex").slice(0, 16)}`;
+  const cooling = Date.now() - (execState.get(execKey) ?? 0) < EXEC_COOLDOWN_MS;
+  // Never against a live account: execution requires OKX demo (simulated trading) mode.
+  const canExec = Boolean(opts.execute) && isDemo() && opts.source === "okx" && shock === "none";
+  const execution: Execution = {
+    status: !orders.length ? "none" : required ? "approval" : !autoOk || !canExec ? "advice" : cooling ? "cooldown" : "executed",
+    staged,
+    remainingUsd: staged ? neededUsd - sellUsd : 0,
+  };
+
   const body = {
+    execution,
     desk: "risk" as const,
     companyName,
     verdict,
@@ -309,5 +346,44 @@ export async function* runRiskDesk(opts: { source: Source; shock: Shock; policy:
   const hash = recordHash({ ...body, ts });
   const { state: _s, ...rest } = body;
   yield { type: "decision", record: { id: hash.slice(2, 12), ts, ...rest, hash } };
+
+  // 7. Execute the models' decision on the OKX demo account: spot market sells into USDT.
+  if (execution.status === "executed") {
+    // Claim the slot first so a concurrent round cannot sell the same amount again.
+    const prevExec = execState.get(execKey) ?? 0;
+    execState.set(execKey, Date.now());
+    const fills: Fill[] = [];
+    const ownAccount = !opts.okxCredentials || opts.okxCredentials.apiKey === process.env.OKX_API_KEY;
+    for (const o of orders) {
+      try {
+        const inst = await getInstrument(o.instId);
+        const qty = await roundLot(o.instId, o.qty);
+        if (Number(qty) < Number(inst.minSz)) {
+          fills.push({ instId: o.instId, ccy: o.ccy, qty, usd: o.usd, ok: false, error: `min. emir ${inst.minSz} ${o.ccy}` });
+          continue;
+        }
+        let ordId: string | undefined;
+        if (ownAccount) {
+          // Host account goes through the OKX Agent Trade Kit.
+          const r = atkData<{ ordId: string; sCode?: string; sMsg?: string }>(await atkCall("spot_place_order", { instId: o.instId, tdMode: "cash", side: "sell", ordType: "market", sz: qty, tgtCcy: "base_ccy" }))[0];
+          if (!r?.ordId || (r.sCode && r.sCode !== "0")) throw new Error(r?.sMsg || "emir reddedildi");
+          ordId = r.ordId;
+        } else {
+          ordId = (await placeOrder({ instId: o.instId, side: "sell", ordType: "market", sz: qty, tdMode: "cash", tgtCcy: "base_ccy" }, opts.okxCredentials))[0]?.ordId;
+        }
+        fills.push({ instId: o.instId, ccy: o.ccy, qty, usd: o.usd, ok: true, ordId });
+      } catch (e) {
+        const msg = (e as Error).message;
+        if (/compliance|can't trade this pair|not available in your region/i.test(msg)) restricted.add(o.instId);
+        fills.push({ instId: o.instId, ccy: o.ccy, qty: o.qty.toFixed(6), usd: o.usd, ok: false, error: msg.slice(0, 140) });
+      }
+    }
+    const ok = fills.filter((f) => f.ok);
+    // Cool down only after something actually reached OKX; failed rounds retry next tick.
+    execState.set(execKey, ok.length ? Date.now() : prevExec);
+    yield { type: "execution", status: "executed", fills, text: `${ok.length}/${fills.length} emir OKX demo'ya gönderildi · ${Math.round(ok.reduce((t, f) => t + f.usd, 0)).toLocaleString("tr-TR")} USD stable'a` };
+  } else if (execution.status === "cooldown") {
+    yield { type: "execution", status: "cooldown", fills: [], text: "Önceki emirlerin bakiyeye yansıması bekleniyor, bu tur uygulanmadı" };
+  }
   yield { type: "done" };
 }

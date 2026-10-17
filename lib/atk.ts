@@ -7,8 +7,10 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
  * The agent talks to OKX through ATK's MCP tools, the same server Claude/Cursor would use.
  */
 
-type G = typeof globalThis & { __atk?: Promise<Client> };
+type G = typeof globalThis & { __atk?: Promise<Client>; __atkModules?: string };
 const g = globalThis as G;
+/** spot is required: spot_place_order / spot_place_algo_order / spot_get_order live in that module. */
+const MODULES = "market,account,spot";
 
 function binPath() {
   return path.join(process.cwd(), "node_modules", "@okx_ai", "okx-trade-mcp", "dist", "index.js");
@@ -17,7 +19,7 @@ function binPath() {
 async function connect() {
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [binPath(), "--modules", "market,account,swap"],
+    args: [binPath(), "--modules", MODULES],
     env: {
       ...(process.env as Record<string, string>),
       OKX_API_KEY: process.env.OKX_API_KEY ?? "",
@@ -37,7 +39,13 @@ async function connect() {
 }
 
 export function atkClient() {
+  // A client spawned with an older module list (kept alive across dev reloads) is replaced.
+  if (g.__atk && g.__atkModules !== MODULES) {
+    void g.__atk.then((c) => c.close()).catch(() => {});
+    g.__atk = undefined;
+  }
   if (!g.__atk) {
+    g.__atkModules = MODULES;
     g.__atk = connect().catch((e) => {
       g.__atk = undefined;
       throw e;

@@ -35,6 +35,9 @@ export type HistoryEntry = {
   orders: number;
   sellUsd: number;
   approval: boolean;
+  /** what happened to the decision: executed on OKX demo, waiting for a human, advice only, cooldown, none */
+  execution: string;
+  executedUsd: number;
   votes: Vote[];
 };
 
@@ -90,6 +93,7 @@ export function recordRound(key: string, events: RiskEvent[]) {
   const models = events.find((e) => e.type === "models") as Extract<RiskEvent, { type: "models" }> | undefined;
   const portfolio = events.find((e) => e.type === "portfolio") as Extract<RiskEvent, { type: "portfolio" }> | undefined;
   const checks = events.find((e) => e.type === "checks") as Extract<RiskEvent, { type: "checks" }> | undefined;
+  const exec = events.find((e) => e.type === "execution") as Extract<RiskEvent, { type: "execution" }> | undefined;
   if (!decision || !models) return;
   const r = decision.record;
   const votes: Vote[] = models.models.map((m) => {
@@ -117,6 +121,8 @@ export function recordRound(key: string, events: RiskEvent[]) {
     orders: r.orders.length,
     sellUsd: r.sellUsd,
     approval: r.approval.required,
+    execution: r.execution?.status ?? "none",
+    executedUsd: exec?.fills.filter((f) => f.ok).reduce((t, f) => t + f.usd, 0) ?? 0,
     votes,
   };
   const s = store();
