@@ -4,6 +4,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { LlmVsJev } from "@/components/agent/LlmVsJev";
+import { BusinessModel } from "@/components/pitch/BusinessModel";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 const reveal = {
@@ -36,7 +37,7 @@ export default function PitchPage() {
 
   useEffect(() => {
     const slides = () => Array.from(root.current?.querySelectorAll<HTMLElement>("[data-slide]") ?? []);
-    const io = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting && setIdx(slides().indexOf(e.target as HTMLElement))), { threshold: 0.55 });
+    const io = new IntersectionObserver((es) => es.forEach((e) => e.isIntersecting && setIdx(slides().indexOf(e.target as HTMLElement))), { threshold: 0.3 });
     slides().forEach((s) => io.observe(s));
     const onKey = (e: KeyboardEvent) => {
       const list = slides();
@@ -65,7 +66,7 @@ export default function PitchPage() {
   return (
     <div ref={root} className="h-[calc(100vh-64px)] snap-y snap-mandatory overflow-y-auto">
       <div className="pointer-events-none fixed bottom-4 right-4 z-30 rounded-full border border-ink/15 bg-paper px-3 py-1 font-mono text-xs shadow-btn">
-        {String(idx + 1).padStart(2, "0")} / 08
+        {String(idx + 1).padStart(2, "0")} / 10
       </div>
 
       {/* 1 · title */}
@@ -190,10 +191,63 @@ export default function PitchPage() {
         </div>
       </section>
 
+      {/* business model */}
+      <section data-slide className={slide}>
+        <div className={wrap}>
+          <motion.div {...reveal} className={kicker}>06 · İş modeli</motion.div>
+          <motion.h2 {...reveal} className={h2}>
+            Tahmin tutarsa
+            <br />
+            <span className="bg-sun px-2">kazanırız.</span>
+          </motion.h2>
+          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+            {[
+              ["Prediction market mantığı", "Her ajan bir olasılık tahmini satar. Kullanıcı, Fuji'deki ERC-8004 itibar geçmişine bakarak hangi ajana bütçe vereceğini seçer: kalibre tahmin yapan ajan öne çıkar."],
+              ["Karar başına x402", "Her karar turu küçük bir x402 ödemesiyle (ör. 0,001 USDC) ödenir. Model ve settle maliyetini karşılar; kâr da zarar da olsa ödenir."],
+              ["Sadece kârdan başarı ücreti", "Zarar eden ajandan ücret alınmaz. Ücret sadece high-water mark üstündeki yeni kârdan alınır; önce zarar geri kazanılır."],
+            ].map(([t, d], i) => (
+              <motion.div key={t} {...reveal} transition={{ ...reveal.transition, delay: i * 0.07 }} className="rounded-card border border-ink/15 bg-paper p-5 shadow-card">
+                <div className="text-lg font-bold">{t}</div>
+                <p className="mt-1 text-sm text-ink/70">{d}</p>
+              </motion.div>
+            ))}
+          </div>
+          <motion.div {...reveal} className="mt-6">
+            <BusinessModel />
+          </motion.div>
+        </div>
+      </section>
+
+      {/* avalanche + okx */}
+      <section data-slide className={`${slide} paper-grid`}>
+        <div className={wrap}>
+          <motion.div {...reveal} className={kicker}>07 · Neden Avalanche, neden OKX</motion.div>
+          <motion.h2 {...reveal} className={h2}>Zincirde güven, borsada işlem.</motion.h2>
+          <div className="mt-8 grid gap-3 md:grid-cols-2">
+            <motion.div {...reveal} className="rounded-card border-2 border-ink bg-paper p-5 shadow-brut">
+              <div className="font-display text-3xl uppercase">Avalanche Fuji</div>
+              <ul className="mt-3 space-y-2 text-sm text-ink/80">
+                <li><b>ERC-8004 kimlik:</b> her ajan kendi cüzdanıyla kaydolur; model ve yetki hash'i metadata'da.</li>
+                <li><b>x402 mikro ödeme:</b> karar turu başına USDC (EIP-3009). Hızlı kesinleşme sayesinde ödeme turu bekletmez.</li>
+                <li><b>İtibar:</b> kapanan her işlem PnL ile Reputation Registry'ye yazılır; kalibrasyon herkesçe denetlenir.</li>
+              </ul>
+            </motion.div>
+            <motion.div {...reveal} className="rounded-card border-2 border-ink bg-paper p-5 shadow-brut">
+              <div className="font-display text-3xl uppercase">OKX</div>
+              <ul className="mt-3 space-y-2 text-sm text-ink/80">
+                <li><b>Agent Trade Kit:</b> piyasa taraması, mumlar, spot emir ve OCO TP/SL ATK'nın MCP araçlarıyla.</li>
+                <li><b>OKX.AI servisi:</b> karar servisi x402 ile ücretli bir API; başka ajanlar da karar satın alabilir.</li>
+                <li><b>Demo hesap:</b> trade ekranı OKX demo ile aynı davranır.</li>
+              </ul>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
       {/* 7 · demo */}
       <section data-slide className={`${slide} bg-stage text-white`}>
         <div className={`${wrap} text-center`}>
-          <motion.div {...reveal} className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-white/50">06 · Canlı demo</motion.div>
+          <motion.div {...reveal} className="font-mono text-xs font-bold uppercase tracking-[0.2em] text-white/50">08 · Canlı demo</motion.div>
           <motion.h2 {...reveal} className="mt-3 font-display text-6xl uppercase leading-[0.95] sm:text-8xl">
             İzleyin,
             <br />
@@ -216,7 +270,7 @@ export default function PitchPage() {
       {/* 8 · next */}
       <section data-slide className={`${slide} paper-grid`}>
         <div className={wrap}>
-          <motion.div {...reveal} className={kicker}>07 · Sırada ne var</motion.div>
+          <motion.div {...reveal} className={kicker}>09 · Sırada ne var</motion.div>
           <motion.h2 {...reveal} className={h2}>
             Doğrulanabilir
             <br />

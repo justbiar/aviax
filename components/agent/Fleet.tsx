@@ -15,6 +15,8 @@ export type FleetAgentView = {
   mandate: { allowed: string[]; maxTradeUsdt: number; maxDailyTrades: number; maxDrawdownPct: number; minGate: number };
   chain: { enabled: boolean; status: "off" | "awaiting_funds" | "launching" | "registered" | "failed"; funding?: "agentic" | "browser"; owner?: string | null; wallet: string; agentId: string | null; mandateHash: string | null; paidUsdc: number; payments: number; feedbacks: number; log: ChainLogView[]; error: string | null };
   tradesToday: number;
+  hwm: number;
+  feesPaid: number;
   execution: "paper" | "okx";
   budget: number;
   intervalSec: number;
@@ -262,7 +264,7 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
       </div>
       <div className="mt-1 flex justify-between font-mono text-[10px] text-muted">
         <span>kullanılan {fmtNum(marginUsed, 0)} / {fmtNum(a.budget, 0)}</span>
-        <span>{a.trades.length} işlem · {wins} kâr</span>
+        <span>{a.trades.length} işlem · {wins} kâr · ücret {fmtNum(a.feesPaid ?? 0, 2)}</span>
       </div>
 
       <div className="mt-3 min-h-[52px] break-words rounded-btn bg-ink/[0.04] px-3 py-2 font-mono text-xs [overflow-wrap:anywhere]">

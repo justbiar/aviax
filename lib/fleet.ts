@@ -14,6 +14,9 @@ import { cancelAlgo, getAlgoOrder, getOrder, getTicker, hasOkxKeys, placeOrder }
  * agent at a time and every agent keeps its own virtual ledger.
  */
 
+/** Performance fee on new profit only (high-water mark). */
+export const SUCCESS_FEE = Number(process.env.SUCCESS_FEE_PCT || 18) / 100;
+
 export type AgentStatus = "running" | "paused";
 export type AgentPhase = "idle" | "thinking" | "in_position" | "cooldown" | "error";
 
@@ -35,6 +38,7 @@ export type Trade = {
   openedAt: number;
   closedAt?: number;
   pnl?: number;
+  fee?: number;
   reason?: "tp" | "sl" | "manual" | "timeout" | "external";
 };
 
@@ -77,6 +81,9 @@ export type FleetAgent = {
   /** bring-your-own OpenRouter key (never sent to the client) */
   openrouterKey?: string;
   mandate: Mandate;
+  /** success fee: equity high-water mark and fees charged so far (only on new profit) */
+  hwm: number;
+  feesPaid: number;
   /** agent wallet private key on Fuji testnet (never sent to the client) */
   walletPk: Hex;
   chain: ChainState;
@@ -136,6 +143,8 @@ function migrate(a: FleetAgent): FleetAgent {
   a.chain.funding ??= "agentic";
   a.chain.owner ??= null;
   a.events ??= [];
+  a.hwm ??= a.budget;
+  a.feesPaid ??= 0;
   return a;
 }
 
@@ -187,6 +196,8 @@ export function createAgent(input: NewAgent) {
   const a: FleetAgent = {
     ...cfg,
     walletPk,
+    hwm: cfg.budget,
+    feesPaid: 0,
     chain: { enabled: launch, status: launch ? (funding === "browser" ? "awaiting_funds" : "launching") : "off", funding, owner, wallet: privateKeyToAccount(walletPk).address, agentId: null, mandateHash: mandateHash({ ...cfg.mandate, budget: cfg.budget, model: cfg.model, validator: cfg.validator }), paidUsdc: 0, payments: 0, feedbacks: 0, log: [], error: null },
     id,
     status: launch ? "paused" : "running",
@@ -414,11 +425,23 @@ async function trackPosition(a: FleetAgent) {
   t.reason = reason;
   t.closedAt = Date.now();
   a.realizedPnl += pnl;
+  // Success fee: charged only on equity above the high-water mark. Losses cost nothing,
+  // and no fee is taken again until earlier losses are recovered.
+  const eqAfter = a.budget + a.realizedPnl;
+  let fee = 0;
+  if (eqAfter > a.hwm) {
+    fee = (eqAfter - a.hwm) * SUCCESS_FEE;
+    a.realizedPnl -= fee;
+    a.feesPaid += fee;
+    a.hwm = eqAfter - fee;
+    t.fee = fee;
+    chainLog(a, "info", `Başarı ücreti %${Math.round(SUCCESS_FEE * 100)}: ${fee.toFixed(4)} USDT (yeni zirve ${a.hwm.toFixed(2)})`);
+  }
   a.trades = [t, ...a.trades].slice(0, 50);
   if (a.chain.status === "registered" && a.chain.agentId) {
     const pnlPct = (pnl / (t.entry * qty)) * 100;
     const agentId = a.chain.agentId;
-    giveFeedback(agentId, pnlPct, t.instId, { instId: t.instId, entry: t.entry, exit, qty: t.qty, pnl, reason, openedAt: t.openedAt, closedAt: t.closedAt })
+    giveFeedback(agentId, pnlPct, t.instId, { instId: t.instId, entry: t.entry, exit, qty: t.qty, pnl, successFee: fee, hwm: a.hwm, reason, openedAt: t.openedAt, closedAt: t.closedAt })
       .then((h) => {
         a.chain.feedbacks += 1;
         chainLog(a, "reputation", `ERC-8004 itibar: ${t.instId} ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}% (${reason})`, txUrl(h));

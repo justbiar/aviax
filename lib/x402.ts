@@ -9,7 +9,8 @@ import { FUJI, USDC_ABI, operatorAccount, operatorPk, publicClient, walletFor } 
  */
 
 export const X402_NETWORK = "avalanche-fuji";
-export const CYCLE_PRICE_USDC = Number(process.env.X402_CYCLE_PRICE_USDC || 0.01);
+/** Per-cycle decision price: covers model inference + settlement, paid win or lose. */
+export const CYCLE_PRICE_USDC = Number(process.env.X402_CYCLE_PRICE_USDC || 0.001);
 
 export type PaymentRequirements = {
   scheme: "exact";
