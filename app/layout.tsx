@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Anton, Figtree, JetBrains_Mono } from "next/font/google";
 import { Nav } from "@/components/Nav";
+import { WalletProvider } from "@/components/wallet/WalletProvider";
 import "./globals.css";
 
 const display = Anton({ subsets: ["latin", "latin-ext"], weight: "400", variable: "--font-display" });
@@ -16,8 +17,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="tr" className={`${display.variable} ${sans.variable} ${mono.variable}`}>
       <body className="min-h-screen font-sans">
-        <Nav />
-        {children}
+        <WalletProvider>
+          <Nav />
+          {children}
+        </WalletProvider>
       </body>
     </html>
   );

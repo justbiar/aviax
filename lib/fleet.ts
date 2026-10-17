@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { runAgent, type AgentEvent, type Plan } from "./agent";
-import { agentUrl, fundAvax, fundUsdc, giveFeedback, hasChain, mandateHash, registerAgent, txUrl, usdcBalance } from "./chain";
+import { balances, fundAvax, fundUsdc, giveFeedback, hasChain, mandateHash, registerAgent, txUrl, usdcBalance } from "./chain";
 import { CYCLE_PRICE_USDC, payAndFetch } from "./x402";
 import { cancelAlgo, getAlgoOrder, getOrder, getTicker, hasOkxKeys, placeOrder } from "./okx";
 
@@ -53,7 +53,11 @@ export type ChainLog = { at: number; kind: "fund" | "register" | "x402" | "reput
 
 export type ChainState = {
   enabled: boolean;
-  status: "off" | "launching" | "registered" | "failed";
+  status: "off" | "awaiting_funds" | "launching" | "registered" | "failed";
+  /** who funds the agent: the app's agentic wallet, or the user's browser wallet */
+  funding: "agentic" | "browser";
+  /** the user's address that owns/funds this agent */
+  owner: Hex | null;
   wallet: Hex;
   agentId: string | null;
   mandateHash: Hex | null;
@@ -99,7 +103,11 @@ export type FleetAgent = {
   events: AgentEvent[];
 };
 
-export type NewAgent = Pick<FleetAgent, "name" | "model" | "validator" | "openrouterKey" | "mandate" | "execution" | "budget" | "intervalSec" | "maxLeverage" | "universe" | "maxHoldMin"> & { launchOnFuji: boolean };
+export type NewAgent = Pick<FleetAgent, "name" | "model" | "validator" | "openrouterKey" | "mandate" | "execution" | "budget" | "intervalSec" | "maxLeverage" | "universe" | "maxHoldMin"> & {
+  launchOnFuji: boolean;
+  funding: "agentic" | "browser";
+  owner: Hex | null;
+};
 
 type Store = { agents: Map<string, FleetAgent>; busy: Set<string>; timer?: NodeJS.Timeout; loaded: boolean };
 const g = globalThis as typeof globalThis & { __fleet?: Store };
@@ -124,7 +132,9 @@ function migrate(a: FleetAgent): FleetAgent {
   a.validator ??= "ollama:laya";
   a.mandate ??= { allowed: [], maxTradeUsdt: a.budget, maxDailyTrades: 20, maxDrawdownPct: 20, minGate: 0.55 };
   a.walletPk ??= generatePrivateKey();
-  a.chain ??= { enabled: false, status: "off", wallet: privateKeyToAccount(a.walletPk).address, agentId: null, mandateHash: null, paidUsdc: 0, payments: 0, feedbacks: 0, log: [], error: null };
+  a.chain ??= { enabled: false, status: "off", funding: "agentic", owner: null, wallet: privateKeyToAccount(a.walletPk).address, agentId: null, mandateHash: null, paidUsdc: 0, payments: 0, feedbacks: 0, log: [], error: null };
+  a.chain.funding ??= "agentic";
+  a.chain.owner ??= null;
   a.events ??= [];
   return a;
 }
@@ -170,13 +180,14 @@ function chainLog(a: FleetAgent, kind: ChainLog["kind"], text: string, tx?: stri
 export function createAgent(input: NewAgent) {
   ensureFleet();
   const id = Math.random().toString(36).slice(2, 8);
-  const { launchOnFuji, ...cfg } = input;
+  const { launchOnFuji, funding, owner, ...cfg } = input;
   const walletPk = generatePrivateKey();
-  const launch = launchOnFuji && hasChain();
+  // Browser funding needs no server key for funding; agentic funding needs the operator wallet.
+  const launch = launchOnFuji && (funding === "browser" || hasChain());
   const a: FleetAgent = {
     ...cfg,
     walletPk,
-    chain: { enabled: launch, status: launch ? "launching" : "off", wallet: privateKeyToAccount(walletPk).address, agentId: null, mandateHash: mandateHash({ ...cfg.mandate, budget: cfg.budget, model: cfg.model, validator: cfg.validator }), paidUsdc: 0, payments: 0, feedbacks: 0, log: [], error: null },
+    chain: { enabled: launch, status: launch ? (funding === "browser" ? "awaiting_funds" : "launching") : "off", funding, owner, wallet: privateKeyToAccount(walletPk).address, agentId: null, mandateHash: mandateHash({ ...cfg.mandate, budget: cfg.budget, model: cfg.model, validator: cfg.validator }), paidUsdc: 0, payments: 0, feedbacks: 0, log: [], error: null },
     id,
     status: launch ? "paused" : "running",
     createdAt: Date.now(),
@@ -208,32 +219,52 @@ async function launchOnChain(a: FleetAgent) {
   const c = a.chain;
   try {
     chainLog(a, "info", `Ajan cüzdanı oluşturuldu: ${c.wallet}`);
-    const fundTx = await fundAvax(c.wallet, process.env.FUJI_AGENT_GAS_AVAX || "0.02");
-    chainLog(a, "fund", "Platform → ajan cüzdanı 0.02 AVAX (gas)", txUrl(fundTx));
-    save();
+    if (c.funding === "browser") {
+      // The user's wallet sends AVAX (+ USDC) from the browser; wait until it lands.
+      c.status = "awaiting_funds";
+      chainLog(a, "info", "Cüzdanından ajan cüzdanına fon bekleniyor (AVAX gas + USDC x402)...");
+      save();
+      const deadline = Date.now() + 10 * 60_000;
+      let b = await balances(c.wallet);
+      while (b.avax < 0.01 && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 4000));
+        b = await balances(c.wallet).catch(() => b);
+      }
+      if (b.avax < 0.01) throw new Error("10 dakika içinde ajan cüzdanına AVAX gelmedi");
+      chainLog(a, "fund", `Cüzdanından fon geldi: ${b.avax.toFixed(3)} AVAX · ${b.usdc.toFixed(2)} USDC`);
+      c.status = "launching";
+      save();
+    } else {
+      const fundTx = await fundAvax(c.wallet, process.env.FUJI_AGENT_GAS_AVAX || "0.02");
+      chainLog(a, "fund", "Agentic wallet → ajan cüzdanı 0.02 AVAX (gas)", txUrl(fundTx));
+      save();
+    }
 
     const card = {
       type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
       name: `Aviax · ${a.name}`,
       description: "Prediction-native spot trading agent. Decisions come from decision models as probability distributions.",
       services: [{ name: "aviax-decision-cycle", endpoint: "/api/x402/cycle", payment: { protocol: "x402", network: "avalanche-fuji", asset: "USDC", price: CYCLE_PRICE_USDC } }],
+      owner: c.owner,
       model: a.model,
       validator: a.validator,
       mandate: { ...a.mandate, budgetUsdt: a.budget },
       mandateHash: c.mandateHash,
       supportedTrust: ["reputation"],
     };
-    const reg = await registerAgent(a.walletPk, card, { model: a.model, validator: a.validator, mandateHash: c.mandateHash ?? "" });
+    const reg = await registerAgent(a.walletPk, card, { model: a.model, validator: a.validator, mandateHash: c.mandateHash ?? "", ...(c.owner ? { owner: c.owner } : {}) });
     c.agentId = reg.agentId;
     chainLog(a, "register", `ERC-8004 kimliği alındı: agentId #${reg.agentId} (yetki hash'i metadata'da)`, txUrl(reg.hash));
     save();
 
-    const topUp = Number(process.env.FUJI_AGENT_USDC || 0.2);
-    try {
-      const usdcTx = await fundUsdc(c.wallet, topUp);
-      chainLog(a, "fund", `Platform → ajan ${topUp} USDC (x402 ödemeleri için)`, txUrl(usdcTx));
-    } catch (e) {
-      chainLog(a, "error", `USDC gönderilemedi: ${(e as Error).message.slice(0, 120)}. x402 ödemeleri için platform cüzdanına Fuji USDC lazım.`);
+    if (c.funding === "agentic") {
+      const topUp = Number(process.env.FUJI_AGENT_USDC || 0.2);
+      try {
+        const usdcTx = await fundUsdc(c.wallet, topUp);
+        chainLog(a, "fund", `Agentic wallet → ajan ${topUp} USDC (x402 ödemeleri için)`, txUrl(usdcTx));
+      } catch (e) {
+        chainLog(a, "error", `USDC gönderilemedi: ${(e as Error).message.slice(0, 120)}. x402 için agentic wallet'a Fuji USDC lazım.`);
+      }
     }
     c.status = "registered";
     a.status = "running";
@@ -243,7 +274,11 @@ async function launchOnChain(a: FleetAgent) {
   } catch (e) {
     const msg = (e as Error).message;
     c.status = "failed";
-    c.error = /insufficient funds|exceeds balance/i.test(msg) ? "Platform cüzdanında yeterli Fuji AVAX yok. Faucet'ten AVAX gönderip tekrar dene." : msg.slice(0, 200);
+    c.error = /insufficient funds|exceeds balance/i.test(msg)
+      ? c.funding === "agentic"
+        ? "Agentic wallet'ta yeterli Fuji AVAX yok. Faucet'ten AVAX gönderip tekrar dene."
+        : "Ajan cüzdanında gas için yeterli AVAX yok."
+      : msg.slice(0, 200);
     chainLog(a, "error", `Fuji fırlatma başarısız: ${c.error}`);
     save();
   }

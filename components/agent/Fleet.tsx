@@ -13,7 +13,7 @@ export type FleetAgentView = {
   model: string;
   validator: string;
   mandate: { allowed: string[]; maxTradeUsdt: number; maxDailyTrades: number; maxDrawdownPct: number; minGate: number };
-  chain: { enabled: boolean; status: "off" | "launching" | "registered" | "failed"; wallet: string; agentId: string | null; mandateHash: string | null; paidUsdc: number; payments: number; feedbacks: number; log: ChainLogView[]; error: string | null };
+  chain: { enabled: boolean; status: "off" | "awaiting_funds" | "launching" | "registered" | "failed"; funding?: "agentic" | "browser"; owner?: string | null; wallet: string; agentId: string | null; mandateHash: string | null; paidUsdc: number; payments: number; feedbacks: number; log: ChainLogView[]; error: string | null };
   tradesToday: number;
   execution: "paper" | "okx";
   budget: number;
@@ -193,7 +193,9 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
   const pnlPct = (pnl / a.budget) * 100;
   const marginUsed = a.position ? a.position.margin : 0;
   const ph =
-    a.chain.status === "launching"
+    a.chain.status === "awaiting_funds"
+      ? { t: "Fon bekleniyor", c: "bg-sun text-ink" }
+      : a.chain.status === "launching"
       ? { t: "Fuji'ye kaydediliyor", c: "bg-sun text-ink" }
       : a.chain.status === "failed"
         ? { t: "Fuji kaydı başarısız", c: "bg-short/15 text-short" }
@@ -275,7 +277,7 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
           </div>
         ) : a.chain.status === "failed" ? (
           <span className="text-short">{a.chain.error}</span>
-        ) : a.chain.status === "launching" ? (
+        ) : a.chain.status === "launching" || a.chain.status === "awaiting_funds" ? (
           <span className="text-muted">{a.chain.log[0]?.text ?? "Fuji'ye bağlanıyor..."}</span>
         ) : a.lastError ? (
           <span className="text-short">{a.lastError.slice(0, 140)}</span>
@@ -304,7 +306,7 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
         {a.chain.status === "failed" && (
           <button onClick={() => act("launch")} className="min-h-[36px] rounded-btn bg-sun px-3 text-xs font-bold">Fuji'ye tekrar dene</button>
         )}
-        {a.chain.status === "launching" || a.chain.status === "failed" ? null : a.status === "running" ? (
+        {a.chain.status === "launching" || a.chain.status === "awaiting_funds" || a.chain.status === "failed" ? null : a.status === "running" ? (
           <button onClick={() => act("pause")} className="min-h-[36px] rounded-btn border border-ink/20 px-3 text-xs font-bold hover:border-ink">Duraklat</button>
         ) : (
           <button onClick={() => act("start")} className="min-h-[36px] rounded-btn border border-ink/20 px-3 text-xs font-bold hover:border-ink">Başlat</button>

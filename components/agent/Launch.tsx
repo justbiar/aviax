@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import type { ModelOption } from "@/lib/models";
+import { useWallet } from "@/components/wallet/WalletProvider";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 const field = "w-full rounded-btn border border-ink/20 bg-paper px-3 py-2.5 text-sm outline-none transition-shadow focus:border-ink focus:shadow-[0_0_0_3px_rgb(var(--sun)/0.5)]";
@@ -10,12 +11,14 @@ const label = "mb-1 block text-xs font-semibold text-muted";
 const PAIRS = ["BTC", "ETH", "SOL", "AVAX", "XRP", "DOGE", "LINK", "SUI", "NEAR", "ZEC"];
 const STEPS = ["Model", "Yetkiler", "Fuji'ye fırlat"] as const;
 
-type Chain = { configured: boolean; address?: string; avax?: number; usdc?: number; platformUrl?: string; contracts?: { identity: string; reputation: string } };
+const GAS_AVAX = 0.03;
+const X402_USDC = 0.2;
 
 export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void }) {
   const [step, setStep] = useState(0);
   const [options, setOptions] = useState<ModelOption[]>([]);
-  const [chain, setChain] = useState<Chain | null>(null);
+  const w = useWallet();
+  const [launchNote, setLaunchNote] = useState<string | null>(null);
 
   // step 1
   const [name, setName] = useState("");
@@ -48,7 +51,6 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
       setModel((m) => m || local[0]?.value || "");
       setOrModel((m) => m || d.options.find((o) => o.value.startsWith("openrouter:"))?.value || "");
     }).catch(() => null);
-    fetch("/api/chain").then((r) => r.json()).then(setChain).catch(() => null);
   }, []);
 
   useEffect(() => setTest(null), [source, model, orModel, orKey]);
@@ -60,8 +62,9 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
   const validator = local.find((o) => o.value !== model)?.value ?? local[0]?.value ?? "shadow";
   const maxTradeUsdt = Math.max(5, Math.round((budget * maxTradePct) / 100));
   const canNext = step === 0 ? Boolean(primary) && (source === "local" || orKey.length > 10) : step === 1 ? budget >= 10 : true;
-  const lowGas = chain?.configured && (chain.avax ?? 0) < 0.03;
-  const lowUsdc = chain?.configured && (chain.usdc ?? 0) < 0.2;
+  const lowGas = Boolean(w.address) && (w.avax ?? 0) < GAS_AVAX;
+  const lowUsdc = Boolean(w.address) && (w.usdc ?? 0) < X402_USDC;
+  const fujiBlocked = onFuji && (!w.address || lowGas);
 
   const mandate = useMemo(() => ({ allowed, maxTradeUsdt, maxDailyTrades, maxDrawdownPct, minGate }), [allowed, maxTradeUsdt, maxDailyTrades, maxDrawdownPct, minGate]);
 
@@ -104,11 +107,19 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
           maxHoldMin: 240,
           mandate,
           launchOnFuji: onFuji,
+          funding: w.mode === "browser" ? "browser" : "agentic",
+          owner: w.address,
         }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error);
       onLaunched(j.id);
+      if (onFuji && w.mode === "browser") {
+        // The user's own wallet funds the new agent wallet; the server waits for it.
+        setLaunchNote("Cüzdanında iki işlemi onayla: gas için AVAX ve x402 için USDC.");
+        await w.fund(j.wallet, GAS_AVAX, (w.usdc ?? 0) >= X402_USDC ? X402_USDC : 0);
+        setLaunchNote("Fon gönderildi. Ajan Fuji'de kaydediliyor, kartından takip edebilirsin.");
+      } else setLaunchNote(null);
       setStep(0);
       setName("");
     } catch (e) {
@@ -306,20 +317,26 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
                   <div className="space-y-2 rounded-btn border border-ink/15 p-3 text-xs">
                     <div className="font-bold uppercase tracking-wider text-muted">Avalanche Fuji</div>
                     <ol className="space-y-1.5 text-ink/80">
-                      <li>1 · Ajana özel cüzdan açılır, platform gas için 0.02 AVAX gönderir.</li>
+                      <li>1 · Ajana özel cüzdan açılır, {w.mode === "browser" ? "cüzdanından onayınla" : "agentic wallet'tan"} gas için AVAX gönderilir.</li>
                       <li>2 · Ajan kendi cüzdanıyla <b>ERC-8004</b> kimliği alır. Model ve yetki hash'i metadata'ya yazılır.</li>
                       <li>3 · Ajana x402 ödemeleri için USDC yüklenir. Her karar turu <b>x402</b> ile ödenir.</li>
                       <li>4 · Kapanan her işlem ERC-8004 <b>itibar</b> kaydına işlenir.</li>
                     </ol>
-                    {chain?.configured ? (
-                      <a href={chain.platformUrl} target="_blank" rel="noreferrer" className="block font-mono text-[11px] text-muted underline-offset-2 hover:underline">
-                        Platform cüzdanı: {chain.avax?.toFixed(3)} AVAX · {chain.usdc?.toFixed(2)} USDC
-                      </a>
-                    ) : (
-                      <p className="text-short">Fuji cüzdanı yapılandırılmamış (FUJI_PRIVATE_KEY).</p>
-                    )}
-                    {lowGas && <p className="font-semibold text-short">Platform cüzdanında AVAX yok: önce faucet'ten Fuji AVAX gönder.</p>}
-                    {!lowGas && lowUsdc && <p className="font-semibold text-orange-600">Platform cüzdanında USDC az: x402 ödemeleri yapılamaz, Circle faucet'ten Fuji USDC al.</p>}
+                    <div className="rounded-btn bg-ink/[0.04] p-2">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted">Fonlayan cüzdan</div>
+                      {w.address ? (
+                        <div className="font-mono text-[11px]">
+                          {w.mode === "agentic" ? "Agentic wallet" : "Tarayıcı cüzdanı"} · {w.address.slice(0, 6)}…{w.address.slice(-4)} · {w.avax?.toFixed(3) ?? "-"} AVAX · {w.usdc?.toFixed(2) ?? "-"} USDC
+                        </div>
+                      ) : (
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          <button onClick={() => w.connectBrowser()} className="rounded-btn border border-ink/20 px-2.5 py-1.5 text-xs font-bold hover:border-ink">Cüzdan ile bağlan</button>
+                          <button onClick={() => w.createAgentic()} className="rounded-btn bg-sun px-2.5 py-1.5 text-xs font-bold">Agentic wallet oluştur</button>
+                        </div>
+                      )}
+                    </div>
+                    {lowGas && <p className="font-semibold text-short">Cüzdanda yeterli Fuji AVAX yok (en az {GAS_AVAX}). Sağ üstteki menüden faucet'e git.</p>}
+                    {!lowGas && lowUsdc && <p className="font-semibold text-orange-600">Cüzdanda USDC az: x402 ödemeleri için Circle faucet'ten Fuji USDC al.</p>}
                   </div>
                 </div>
                 <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold">
@@ -338,6 +355,7 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
             </button>
           )}
           {err && <span className="text-sm text-short">{err}</span>}
+          {launchNote && <span className="text-sm text-ink/70">{launchNote}</span>}
           {step < 2 ? (
             <button
               onClick={() => (step === 0 ? testAndContinue() : setStep((s) => s + 1))}
@@ -347,7 +365,7 @@ export function LaunchWizard({ onLaunched }: { onLaunched: (id: string) => void 
               {step === 0 ? (testing ? "Test ediliyor..." : test && !test.ok ? "Tekrar test et →" : "Test et ve devam →") : "Devam →"}
             </button>
           ) : (
-            <button onClick={launch} disabled={busy} className="ml-auto min-h-[44px] rounded-btn border border-ink/10 bg-sun px-5 font-bold shadow-btn transition-transform hover:-translate-y-px disabled:opacity-60">
+            <button onClick={launch} disabled={busy || fujiBlocked} title={fujiBlocked ? "Önce cüzdan bağla ve Fuji AVAX ile doldur" : undefined} className="ml-auto min-h-[44px] rounded-btn border border-ink/10 bg-sun px-5 font-bold shadow-btn transition-transform hover:-translate-y-px disabled:opacity-60">
               {busy ? "Fırlatılıyor..." : onFuji ? "Fuji'ye fırlat →" : "Ajanı başlat →"}
             </button>
           )}

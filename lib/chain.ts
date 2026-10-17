@@ -1,11 +1,13 @@
 import { createPublicClient, createWalletClient, decodeEventLog, encodeAbiParameters, formatEther, formatUnits, http, keccak256, parseAbi, parseEther, toHex, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { avalancheFuji } from "viem/chains";
+import { agenticWallet } from "./wallets";
 
 /**
  * Avalanche Fuji layer: ERC-8004 identity + reputation (official v1 registries) and
- * Fuji USDC for x402 payments. The platform wallet pays gas, funds agent wallets,
- * acts as x402 facilitator and gives reputation feedback after every closed trade.
+ * Fuji USDC for x402 payments. The operator wallet (the user's agentic wallet, or the
+ * FUJI_PRIVATE_KEY service wallet as fallback) pays gas, funds agents, acts as x402
+ * facilitator and gives reputation feedback after every closed trade.
  */
 
 export const FUJI = {
@@ -41,20 +43,27 @@ export const USDC_ABI = parseAbi([
   "function authorizationState(address authorizer, bytes32 nonce) view returns (bool)",
 ]);
 
-export const hasChain = () => Boolean(process.env.FUJI_PRIVATE_KEY);
+/** Operator key: the agentic wallet when one exists, otherwise the service wallet from env. */
+export const operatorPk = (): Hex | null => (agenticWallet()?.pk ?? (process.env.FUJI_PRIVATE_KEY as Hex | undefined)) || null;
+export const operatorKind = () => (agenticWallet() ? "agentic" : process.env.FUJI_PRIVATE_KEY ? "service" : "none");
+export const hasChain = () => Boolean(operatorPk());
 
 const transport = () => http(process.env.FUJI_RPC_URL || "https://api.avax-test.network/ext/bc/C/rpc");
 export const publicClient = createPublicClient({ chain: avalancheFuji, transport: transport() });
 
-export const platformAccount = () => privateKeyToAccount(process.env.FUJI_PRIVATE_KEY as Hex);
+export const operatorAccount = () => privateKeyToAccount(operatorPk() as Hex);
 export const walletFor = (pk: Hex) => createWalletClient({ chain: avalancheFuji, transport: transport(), account: privateKeyToAccount(pk) });
-const platformWallet = () => walletFor(process.env.FUJI_PRIVATE_KEY as Hex);
+const operatorWallet = () => walletFor(operatorPk() as Hex);
 
-export async function platformStatus() {
-  if (!hasChain()) return { configured: false as const };
-  const address = platformAccount().address;
+export async function balances(address: Hex) {
   const [avax, usdc] = await Promise.all([publicClient.getBalance({ address }), publicClient.readContract({ address: FUJI.usdc, abi: USDC_ABI, functionName: "balanceOf", args: [address] })]);
-  return { configured: true as const, address, avax: Number(formatEther(avax)), usdc: Number(formatUnits(usdc, 6)) };
+  return { avax: Number(formatEther(avax)), usdc: Number(formatUnits(usdc, 6)) };
+}
+
+export async function operatorStatus() {
+  if (!hasChain()) return { configured: false as const, kind: "none" as const };
+  const address = operatorAccount().address;
+  return { configured: true as const, kind: operatorKind(), address, ...(await balances(address)) };
 }
 
 async function confirm(hash: Hex) {
@@ -63,16 +72,16 @@ async function confirm(hash: Hex) {
   return r;
 }
 
-/** Platform sends gas money (AVAX) to an agent wallet. */
+/** Operator sends gas money (AVAX) to an agent wallet. */
 export async function fundAvax(to: Hex, avax: string) {
-  const hash = await platformWallet().sendTransaction({ to, value: parseEther(avax) });
+  const hash = await operatorWallet().sendTransaction({ to, value: parseEther(avax) });
   await confirm(hash);
   return hash;
 }
 
-/** Platform sends USDC to an agent wallet for x402 payments. */
+/** Operator sends USDC to an agent wallet for x402 payments. */
 export async function fundUsdc(to: Hex, usdc: number) {
-  const hash = await platformWallet().writeContract({ address: FUJI.usdc, abi: USDC_ABI, functionName: "transfer", args: [to, BigInt(Math.round(usdc * 1e6))] });
+  const hash = await operatorWallet().writeContract({ address: FUJI.usdc, abi: USDC_ABI, functionName: "transfer", args: [to, BigInt(Math.round(usdc * 1e6))] });
   await confirm(hash);
   return hash;
 }
@@ -108,10 +117,10 @@ export async function registerAgent(agentPk: Hex, card: Record<string, unknown>,
   return { hash, agentId };
 }
 
-/** Platform (as client) records a closed trade on the ERC-8004 Reputation Registry. */
+/** Operator (as client) records a closed trade on the ERC-8004 Reputation Registry. */
 export async function giveFeedback(agentId: string, pnlPct: number, instId: string, detail: Record<string, unknown>) {
   const uri = `data:application/json;base64,${Buffer.from(JSON.stringify(detail)).toString("base64")}`;
-  const hash = await platformWallet().writeContract({
+  const hash = await operatorWallet().writeContract({
     address: FUJI.reputation,
     abi: REPUTATION_ABI,
     functionName: "giveFeedback",

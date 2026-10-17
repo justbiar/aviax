@@ -39,6 +39,8 @@ export async function POST(req: NextRequest) {
       minGate: num(m.minGate, 0.55, 0.5, 0.95),
     },
     launchOnFuji: b.launchOnFuji !== false,
+    funding: b.funding === "browser" ? "browser" : "agentic",
+    owner: typeof b.owner === "string" && /^0x[0-9a-fA-F]{40}$/.test(b.owner) ? (b.owner as `0x${string}`) : null,
   });
-  return NextResponse.json({ id: a.id, chain: a.chain.status });
+  return NextResponse.json({ id: a.id, chain: a.chain.status, wallet: a.chain.wallet });
 }

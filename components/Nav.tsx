@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { WalletMenu } from "./wallet/WalletMenu";
 
 type Status = { okx: boolean; demo: boolean; jev: boolean; jevProvider?: string; laya: boolean; llm: boolean };
 
@@ -73,6 +74,7 @@ export function Nav() {
             </div>
           )}
         </div>
+        <WalletMenu />
       </div>
     </header>
   );

@@ -1,6 +1,6 @@
 import { getAddress, parseSignature, toHex, verifyTypedData, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { FUJI, USDC_ABI, platformAccount, publicClient, walletFor } from "./chain";
+import { FUJI, USDC_ABI, operatorAccount, operatorPk, publicClient, walletFor } from "./chain";
 
 /**
  * x402 (exact scheme, EVM) on Avalanche Fuji with USDC (EIP-3009).
@@ -32,7 +32,7 @@ export function requirements(resource: string, priceUsdc = CYCLE_PRICE_USDC): Pa
     resource,
     description: "Aviax decision cycle: market scan + JEV/LAYA decisions",
     mimeType: "application/json",
-    payTo: platformAccount().address,
+    payTo: operatorAccount().address,
     maxTimeoutSeconds: 120,
     asset: FUJI.usdc,
     extra: { name: "USD Coin", version: "2" },
@@ -99,7 +99,7 @@ export async function verifyAndSettle(header: string, r: PaymentRequirements) {
   if (bal < BigInt(a.value)) throw new Error("payer has insufficient USDC");
 
   const { v, r: sr, s, yParity } = parseSignature(p.payload.signature);
-  const hash = await walletFor(process.env.FUJI_PRIVATE_KEY as Hex).writeContract({
+  const hash = await walletFor(operatorPk() as Hex).writeContract({
     address: r.asset,
     abi: USDC_ABI,
     functionName: "transferWithAuthorization",
