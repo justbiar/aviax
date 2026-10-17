@@ -15,3 +15,4 @@ next-env.d.ts
 data/
 .claude/
 .DS_Store
+.next-prod-new
