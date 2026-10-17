@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
-import { MODEL_OPTIONS, modelLabel } from "@/lib/models";
+import { modelLabel, type ModelOption } from "@/lib/models";
 import { fmtNum, fmtPx, short } from "@/lib/fmt";
 
 export type FleetTrade = { instId: string; side: "long"; qty?: string; entry: number; exit?: number; tp: number; sl: number; notional: number; leverage: number; margin: number; pnl?: number; reason?: string; openedAt: number; closedAt?: number };
@@ -35,7 +35,17 @@ const label = "mb-1 block text-xs font-semibold text-muted";
 
 export function AgentForm({ onCreated }: { onCreated: (id: string) => void }) {
   const [name, setName] = useState("");
-  const [model, setModel] = useState(MODEL_OPTIONS[0].value);
+  const [options, setOptions] = useState<ModelOption[]>([]);
+  const [model, setModel] = useState("");
+  useEffect(() => {
+    fetch("/api/models")
+      .then((r) => r.json())
+      .then((d: { options: ModelOption[] }) => {
+        setOptions(d.options);
+        setModel((m) => m || d.options[0]?.value || "shadow");
+      })
+      .catch(() => setOptions([{ value: "shadow", label: "Shadow (simülasyon)", group: "Test", note: "model listesi alınamadı" }]));
+  }, []);
   const [budget, setBudget] = useState(200);
   const [execution, setExecution] = useState<"paper" | "okx">("paper");
   const [intervalSec, setIntervalSec] = useState(300);
@@ -44,8 +54,8 @@ export function AgentForm({ onCreated }: { onCreated: (id: string) => void }) {
   const [adv, setAdv] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const groups = [...new Set(MODEL_OPTIONS.map((m) => m.group))];
-  const note = MODEL_OPTIONS.find((m) => m.value === model)?.note;
+  const groups = [...new Set(options.map((m) => m.group))];
+  const note = options.find((m) => m.value === model)?.note;
 
   const submit = async () => {
     setBusy(true);
@@ -76,10 +86,11 @@ export function AgentForm({ onCreated }: { onCreated: (id: string) => void }) {
         </label>
         <label>
           <span className={label}>Karar modeli</span>
-          <select className={field} value={model} onChange={(e) => setModel(e.target.value)}>
+          <select className={field} value={model} onChange={(e) => setModel(e.target.value)} disabled={!options.length}>
+            {!options.length && <option>Modeller yükleniyor...</option>}
             {groups.map((g) => (
               <optgroup key={g} label={g}>
-                {MODEL_OPTIONS.filter((m) => m.group === g).map((m) => (
+                {options.filter((m) => m.group === g).map((m) => (
                   <option key={m.value} value={m.value}>{m.label}</option>
                 ))}
               </optgroup>
@@ -186,7 +197,11 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.97 }}
       transition={{ duration: 0.4, ease: EASE }}
-      className={`flex flex-col rounded-card border bg-paper p-4 text-left shadow-card transition-colors ${selected ? "border-ink ring-2 ring-sun" : "border-ink/15"}`}
+      onClick={(e) => {
+        // Any click on the card (except its buttons) puts this agent on the stage.
+        if (!(e.target as HTMLElement).closest("button")) onSelect();
+      }}
+      className={`flex cursor-pointer flex-col rounded-card border bg-paper p-4 text-left shadow-card transition-colors ${selected ? "border-ink ring-2 ring-sun" : "border-ink/15 hover:border-ink/40"}`}
     >
       <div className="flex items-start justify-between gap-2">
         <button onClick={onSelect} className="min-w-0 text-left">

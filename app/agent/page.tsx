@@ -67,7 +67,7 @@ export default function AgentPage() {
           </motion.p>
 
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: EASE, delay: 0.35 }} className="mx-auto mt-8 max-w-[860px]">
-            <AgentForm onCreated={(id) => { setSelected(id); follow(id); reload(); }} />
+            <AgentForm onCreated={(id) => { if (!selected) { setSelected(id); follow(id); } reload(); }} />
             <div className="mt-3 text-center">
               <button
                 onClick={() => { setSelected(null); follow(null); run({ execute: false, universe: 6, pace: 1 }); }}

@@ -79,7 +79,11 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
   const execute = opts.execute && (opts.paper || hasOkxKeys());
   const decide = async (m: ModelName, state: string, qs: Record<string, Question>) => {
     const r = await decideRaw(m, state, qs, m === "jev" ? opts.model : undefined);
-    if (opts.strict && m === "jev" && r.error) throw new Error(`JEV modeli cevap vermedi (${r.error.slice(0, 120)}). Bu tur atlandı.`);
+    if (opts.strict && m === "jev" && r.error) {
+      const name = (opts.model ?? "karar modeli").replace(/^(openrouter|ollama):/, "");
+      const why = /unparseable output: ?$/.test(r.error) ? "boş cevap döndü" : r.error.slice(0, 120);
+      throw new Error(`Karar modeli ${name} cevap vermedi (${why}). Bu tur atlandı, sonraki turda tekrar denenecek.`);
+    }
     return r;
   };
   const provider = (m: ModelName) => resolveSpec(m, m === "jev" ? opts.model : undefined).prov;

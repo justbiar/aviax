@@ -148,7 +148,7 @@ async function openrouterDecide(orModel: string, state: string, questions: Recor
   const user = `STATE:\n${state}\n\nQUESTIONS:\n${JSON.stringify(spec)}\n\nReturn exactly: ${shape}. Use the option keys verbatim (for "score" questions the options are the listed labels).`;
 
   let lastErr = "";
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       signal: AbortSignal.timeout(Number(process.env.DECISION_TIMEOUT_MS || 40000)),
@@ -162,8 +162,9 @@ async function openrouterDecide(orModel: string, state: string, questions: Recor
         model: orModel,
         temperature: 0.2,
         max_tokens: 8000,
-        reasoning: { effort: "low", exclude: true },
-        response_format: { type: "json_object" },
+        // First attempt asks for strict JSON; some free models return nothing with
+        // response_format/reasoning set, so the retry sends a plain request.
+        ...(attempt === 0 ? { reasoning: { effort: "low", exclude: true }, response_format: { type: "json_object" } } : {}),
         messages: [
           { role: "system", content: OR_SYSTEM },
           { role: "user", content: user },

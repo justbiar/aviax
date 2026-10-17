@@ -171,7 +171,7 @@ async function tick() {
     if (a.status !== "running") continue;
     if (a.execution === "okx" && !hasOkxKeys()) continue;
     if (Date.now() < a.nextRunAt) {
-      if (a.phase !== "error") a.phase = a.trades.length ? "cooldown" : "idle";
+      if (a.phase !== "error") a.phase = a.runs > 0 ? "cooldown" : "idle";
       continue;
     }
     if (available(a) < 5) {
@@ -273,7 +273,7 @@ async function cycle(a: FleetAgent) {
       tag: `av${a.id}`,
       paper: a.execution === "paper",
     })) {
-      a.events.push(ev);
+      a.events.push(Object.assign({}, ev, { ts: Date.now() }));
       if (ev.type === "plan") plan = ev.plan;
       if (ev.type === "order") {
         ok = ev.ok;
