@@ -8,7 +8,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   ensureFleet();
   const { id } = await params;
   const { action } = await req.json();
-  if (!["start", "pause", "close", "delete", "run"].includes(action)) return NextResponse.json({ error: "bad action" }, { status: 400 });
+  if (!["start", "pause", "close", "delete", "run", "launch"].includes(action)) return NextResponse.json({ error: "bad action" }, { status: 400 });
   try {
     await agentAction(id, action);
     return NextResponse.json({ ok: true });

@@ -70,6 +70,16 @@ export type RunOpts = {
   tag?: string;
   /** Paper execution: decisions and prices are live, fills are simulated at the live price. */
   paper?: boolean;
+  /** Second-opinion model in the LAYA seat (e.g. "ollama:laya"). */
+  validator?: ModelSpec;
+  /** Bring-your-own OpenRouter key for agents that use an OpenRouter model. */
+  openrouterKey?: string;
+  /** Mandate: pairs the agent is allowed to trade (base symbols). Empty = any liquid pair. */
+  allowed?: string[];
+  /** Mandate: hard cap per trade in USDT. */
+  maxTradeUsdt?: number;
+  /** Mandate: minimum ensemble p(EV>0) required to execute. */
+  minGate?: number;
 };
 
 export const PAPER_FEE = 0.001;
@@ -78,7 +88,7 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
   const t0 = Date.now();
   const execute = opts.execute && (opts.paper || hasOkxKeys());
   const decide = async (m: ModelName, state: string, qs: Record<string, Question>) => {
-    const r = await decideRaw(m, state, qs, m === "jev" ? opts.model : undefined);
+    const r = await decideRaw(m, state, qs, m === "jev" ? opts.model : opts.validator, opts.openrouterKey);
     if (opts.strict && m === "jev" && r.error) {
       const name = (opts.model ?? "karar modeli").replace(/^(openrouter|ollama):/, "");
       const why = /unparseable output: ?$/.test(r.error) ? "boş cevap döndü" : r.error.slice(0, 120);
@@ -86,7 +96,7 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
     }
     return r;
   };
-  const provider = (m: ModelName) => resolveSpec(m, m === "jev" ? opts.model : undefined).prov;
+  const provider = (m: ModelName) => resolveSpec(m, m === "jev" ? opts.model : opts.validator).prov;
   const jevSpec = resolveSpec("jev", opts.model);
   const jevProv = jevSpec.prov;
   yield {
@@ -107,12 +117,18 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
   const n = opts.universe ?? 6;
   const liquid = tickers
     .filter((t) => t.instId.endsWith("-USDT") && CRYPTO.has(base(t.instId)) && !opts.exclude?.includes(t.instId))
+    .filter((t) => !opts.allowed?.length || opts.allowed.includes(base(t.instId)))
     // spot volCcy24h is already quoted in USDT
     .map((t) => ({ ...t, qv: Number(t.volCcy24h) }))
     .sort((a, b) => b.qv - a.qv);
   // AVAX always competes: the agent is built for the Avalanche ecosystem.
-  const avax = liquid.find((t) => t.instId === "AVAX-USDT");
+  const avax = opts.allowed?.length ? undefined : liquid.find((t) => t.instId === "AVAX-USDT");
   const ranked = [...liquid.filter((t) => t !== avax).slice(0, avax ? n - 1 : n), ...(avax ? [avax] : [])];
+  if (ranked.length === 0) {
+    yield { type: "log", tone: "warn", text: "Yetkideki paritelerin hiçbiri şu an işlem görebilir değil (başka ajanda veya listede yok)." };
+    yield { type: "done", ms: Date.now() - t0, verdict: "hold" };
+    return;
+  }
   yield { type: "log", tone: "ok", text: `${tickers.length} spot parite tarandı, hacme göre ilk ${n}: ${ranked.map((r) => base(r.instId)).join(", ")}` };
   yield { type: "stage", stage: "scan", status: "done" };
 
@@ -224,7 +240,9 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
   const sizeScore = 0.6 * (sj.answers.size.score ?? 1) + 0.4 * (sl.answers.size.score ?? 1);
   const leverage = 1;
   const sizeFrac = 0.2 + 0.8 * (sizeScore / 4); // share of the budget spent on this buy
-  const notional = opts.budget ? Math.max(5, Math.floor(opts.budget * sizeFrac)) : Math.round(MAX_NOTIONAL() * sizeFrac);
+  const raw = opts.budget ? Math.max(5, Math.floor(opts.budget * sizeFrac)) : Math.round(MAX_NOTIONAL() * sizeFrac);
+  // Mandate cap: the model sizes inside the budget, the per-trade limit is never exceeded.
+  const notional = opts.maxTradeUsdt ? Math.min(raw, Math.floor(opts.maxTradeUsdt)) : raw;
   yield { type: "decision", key: "size", title: "Alım tutarı", jev: sj.answers.size, laya: sl.answers.size, jevMs: sj.latencyMs, jevSrc: sj.modelId, jevProvider: sj.provider, layaMs: sl.latencyMs, pick: `${notional} USDT` };
   yield { type: "stage", stage: "size", status: "done" };
 
@@ -273,7 +291,8 @@ export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
   };
   const [gj, gl] = await Promise.all([decide("jev", state, gateQ), decide("laya", state, gateQ)]);
   const gate = 0.6 * (gj.answers.gate.value ?? 0.5) + 0.4 * (gl.answers.gate.value ?? 0.5);
-  const pass = gate >= 0.55 && (gj.answers.gate.value ?? 0) >= 0.5 && (gl.answers.gate.value ?? 0) >= 0.45;
+  const minGate = opts.minGate ?? 0.55;
+  const pass = gate >= minGate && (gj.answers.gate.value ?? 0) >= 0.5 && (gl.answers.gate.value ?? 0) >= 0.45;
   yield { type: "decision", key: "gate", title: "Risk kapısı", jev: gj.answers.gate, laya: gl.answers.gate, jevMs: gj.latencyMs, jevSrc: gj.modelId, jevProvider: gj.provider, layaMs: gl.latencyMs, pick: pass ? "yes" : "no" };
   yield { type: "stage", stage: "gate", status: pass ? "done" : "fail", note: `p(EV>0)=${pct(gate)}` };
 

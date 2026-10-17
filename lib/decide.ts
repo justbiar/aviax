@@ -75,9 +75,9 @@ export type ModelSpec = string;
 export const OLLAMA_URL = () => process.env.OLLAMA_SYSTEMONE_URL || "http://localhost:11434/v1/systemone";
 
 export function resolveSpec(m: ModelName, spec?: ModelSpec): { prov: Provider; modelId: string; url?: string; key?: string } {
-  if (m === "jev" && spec) {
+  if (spec) {
     if (spec === "shadow") return { prov: "shadow", modelId: "shadow" };
-    if (spec.startsWith("openrouter:")) return { prov: process.env.OPENROUTER_API_KEY ? "openrouter" : "shadow", modelId: spec.slice("openrouter:".length) };
+    if (spec.startsWith("openrouter:")) return { prov: "openrouter", modelId: spec.slice("openrouter:".length) };
     if (spec.startsWith("ollama:")) return { prov: "endpoint", modelId: spec.slice("ollama:".length), url: OLLAMA_URL() };
   }
   const prov = provider(m);
@@ -85,14 +85,14 @@ export function resolveSpec(m: ModelName, spec?: ModelSpec): { prov: Provider; m
   return { prov, modelId: prov === "openrouter" ? openrouterModel(m) : c.modelId, url: c.url, key: c.key };
 }
 
-export async function decide(model: ModelName, state: string, questions: Record<string, Question>, spec?: ModelSpec): Promise<DecisionResult> {
+export async function decide(model: ModelName, state: string, questions: Record<string, Question>, spec?: ModelSpec, openrouterKey?: string): Promise<DecisionResult> {
   const r = resolveSpec(model, spec);
   const c = { ...cfg[model](), url: r.url, key: r.key, modelId: r.modelId };
   const t0 = performance.now();
   const prov = r.prov;
   if (prov === "openrouter") {
     try {
-      const { answers, routed } = await openrouterDecide(r.modelId, state, questions);
+      const { answers, routed } = await openrouterDecide(r.modelId, state, questions, openrouterKey);
       return { model, source: "live", provider: prov, latencyMs: Math.round(performance.now() - t0), modelId: routed, answers };
     } catch (e) {
       const shadow = shadowDecide(model, questions);
@@ -135,7 +135,7 @@ const OR_SYSTEM =
   "You are a calibrated probabilistic decision model, not a chatbot. For every question you receive, return a probability distribution over exactly the allowed options. " +
   "Probabilities are numbers between 0 and 1 and sum to 1 per question. Be calibrated: do not put 1.0 on anything unless it is certain. Output JSON only, no prose, no markdown.";
 
-async function openrouterDecide(orModel: string, state: string, questions: Record<string, Question>) {
+async function openrouterDecide(orModel: string, state: string, questions: Record<string, Question>, key?: string) {
   const spec = Object.fromEntries(
     Object.entries(questions).map(([k, q]) => [
       k,
@@ -153,7 +153,7 @@ async function openrouterDecide(orModel: string, state: string, questions: Recor
       method: "POST",
       signal: AbortSignal.timeout(Number(process.env.DECISION_TIMEOUT_MS || 40000)),
       headers: {
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        Authorization: `Bearer ${key || process.env.OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
         "HTTP-Referer": "http://localhost:3000",
         "X-Title": "Aviax",

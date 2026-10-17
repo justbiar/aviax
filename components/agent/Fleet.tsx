@@ -6,10 +6,15 @@ import { modelLabel, type ModelOption } from "@/lib/models";
 import { fmtNum, fmtPx, short } from "@/lib/fmt";
 
 export type FleetTrade = { instId: string; side: "long"; qty?: string; entry: number; exit?: number; tp: number; sl: number; notional: number; leverage: number; margin: number; pnl?: number; reason?: string; openedAt: number; closedAt?: number };
+export type ChainLogView = { at: number; kind: string; text: string; tx?: string };
 export type FleetAgentView = {
   id: string;
   name: string;
   model: string;
+  validator: string;
+  mandate: { allowed: string[]; maxTradeUsdt: number; maxDailyTrades: number; maxDrawdownPct: number; minGate: number };
+  chain: { enabled: boolean; status: "off" | "launching" | "registered" | "failed"; wallet: string; agentId: string | null; mandateHash: string | null; paidUsdc: number; payments: number; feedbacks: number; log: ChainLogView[]; error: string | null };
+  tradesToday: number;
   execution: "paper" | "okx";
   budget: number;
   intervalSec: number;
@@ -187,7 +192,14 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
   const pnl = a.equity - a.budget;
   const pnlPct = (pnl / a.budget) * 100;
   const marginUsed = a.position ? a.position.margin : 0;
-  const ph = a.status === "paused" ? { t: "Durduruldu", c: "bg-ink/10 text-ink/50" } : PHASE[a.phase];
+  const ph =
+    a.chain.status === "launching"
+      ? { t: "Fuji'ye kaydediliyor", c: "bg-sun text-ink" }
+      : a.chain.status === "failed"
+        ? { t: "Fuji kaydı başarısız", c: "bg-short/15 text-short" }
+        : a.status === "paused"
+          ? { t: "Durduruldu", c: "bg-ink/10 text-ink/50" }
+          : PHASE[a.phase];
   const wins = a.trades.filter((t) => (t.pnl ?? 0) > 0).length;
 
   return (
@@ -207,7 +219,7 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
         <button onClick={onSelect} className="min-w-0 text-left">
           <div className="truncate font-display text-2xl uppercase leading-none tracking-wide">{a.name}</div>
           <div className="mt-1 truncate font-mono text-[11px] text-muted">
-            {modelLabel(a.model)} · {a.execution === "okx" ? "OKX demo" : "paper"}
+            {modelLabel(a.model)} + {modelLabel(a.validator)} · {a.execution === "okx" ? "OKX demo" : "paper"}
           </div>
         </button>
         <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${ph.c}`}>
@@ -215,6 +227,23 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
           {ph.t}
         </span>
       </div>
+
+      {a.chain.enabled && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5 font-mono text-[10px]">
+          {a.chain.agentId ? (
+            <a href={`https://testnet.snowtrace.io/nft/0x8004A818BFB912233c491871b3d84c89A494BD9e/${a.chain.agentId}`} target="_blank" rel="noreferrer" className="rounded-full border border-ink bg-ink px-2 py-0.5 font-bold text-paper hover:bg-ink/80">
+              ERC-8004 #{a.chain.agentId}
+            </a>
+          ) : (
+            <span className="rounded-full border border-ink/20 px-2 py-0.5">{a.chain.status === "launching" ? "kayıt sürüyor…" : "kimlik yok"}</span>
+          )}
+          <span className="rounded-full border border-ink/20 px-2 py-0.5">x402 {a.chain.payments} · {a.chain.paidUsdc.toFixed(2)} USDC</span>
+          <span className="rounded-full border border-ink/20 px-2 py-0.5">itibar {a.chain.feedbacks}</span>
+          <a href={`https://testnet.snowtrace.io/address/${a.chain.wallet}`} target="_blank" rel="noreferrer" className="rounded-full border border-ink/20 px-2 py-0.5 hover:border-ink">
+            {a.chain.wallet.slice(0, 6)}…{a.chain.wallet.slice(-4)}
+          </a>
+        </div>
+      )}
 
       <div className="mt-4 flex items-end justify-between">
         <div>
@@ -244,6 +273,10 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
             <span className="text-short">SL {fmtPx(a.position.sl)}</span>
             <b className={a.upl >= 0 ? "text-long" : "text-short"}>{a.upl >= 0 ? "+" : ""}{fmtNum(a.upl, 2)}</b>
           </div>
+        ) : a.chain.status === "failed" ? (
+          <span className="text-short">{a.chain.error}</span>
+        ) : a.chain.status === "launching" ? (
+          <span className="text-muted">{a.chain.log[0]?.text ?? "Fuji'ye bağlanıyor..."}</span>
         ) : a.lastError ? (
           <span className="text-short">{a.lastError.slice(0, 140)}</span>
         ) : a.status === "running" && a.phase !== "thinking" ? (
@@ -268,7 +301,10 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
         <button onClick={onSelect} className={`min-h-[36px] rounded-btn px-3 text-xs font-bold ${selected ? "bg-ink text-paper" : "border border-ink/20 hover:border-ink"}`}>
           {selected ? "İzleniyor" : "İzle"}
         </button>
-        {a.status === "running" ? (
+        {a.chain.status === "failed" && (
+          <button onClick={() => act("launch")} className="min-h-[36px] rounded-btn bg-sun px-3 text-xs font-bold">Fuji'ye tekrar dene</button>
+        )}
+        {a.chain.status === "launching" || a.chain.status === "failed" ? null : a.status === "running" ? (
           <button onClick={() => act("pause")} className="min-h-[36px] rounded-btn border border-ink/20 px-3 text-xs font-bold hover:border-ink">Duraklat</button>
         ) : (
           <button onClick={() => act("start")} className="min-h-[36px] rounded-btn border border-ink/20 px-3 text-xs font-bold hover:border-ink">Başlat</button>

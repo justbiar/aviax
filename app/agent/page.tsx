@@ -3,7 +3,9 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useMemo, useState } from "react";
 import { usePoll } from "@/lib/usePoll";
-import { AgentCard, AgentForm, type FleetAgentView } from "@/components/agent/Fleet";
+import { AgentCard, type FleetAgentView } from "@/components/agent/Fleet";
+import { LaunchWizard } from "@/components/agent/Launch";
+import { ChainPanel } from "@/components/agent/ChainPanel";
 import { useAgent } from "@/components/agent/useAgent";
 import { DecisionField } from "@/components/agent/DecisionField";
 import { PipelineRail } from "@/components/agent/PipelineRail";
@@ -67,7 +69,7 @@ export default function AgentPage() {
           </motion.p>
 
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: EASE, delay: 0.35 }} className="mx-auto mt-8 max-w-[860px]">
-            <AgentForm onCreated={(id) => { if (!selected) { setSelected(id); follow(id); } reload(); }} />
+            <LaunchWizard onLaunched={(id) => { if (!selected) { setSelected(id); follow(id); } reload(); }} />
             <div className="mt-3 text-center">
               <button
                 onClick={() => { setSelected(null); follow(null); run({ execute: false, universe: 6, pace: 1 }); }}
@@ -114,6 +116,8 @@ export default function AgentPage() {
           <div className="rounded-card border border-white/10 bg-white/[0.02] px-4 py-5">
             <PipelineRail s={s} />
           </div>
+
+          {current && <ChainPanel a={current} />}
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_340px]">
             <div className="rounded-card border border-white/10 bg-black/40 p-2">

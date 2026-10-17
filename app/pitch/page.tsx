@@ -224,7 +224,7 @@ export default function PitchPage() {
           </motion.h2>
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
             {[
-              ["Avalanche", "Her kararın dağılım hash'i C-Chain'e. Agent'ın tahmin performansı herkes tarafından denetlenebilir."],
+              ["Avalanche · canlı", "Her ajan Fuji'de ERC-8004 kimliği alıyor, yetki hash'i zincirde. Karar turları x402 ile ödeniyor, kapanan işlemler itibar kaydına işleniyor."],
               ["Fine-tune LAYA", "Açık kaynak LAYA'yı kendi trade sonuçlarımızla eğit. Kalibrasyon her gün iyileşsin."],
               ["Kalibrasyon paneli", "Tahmin edilen olasılık ile gerçekleşen sonuç: Brier skoru ve güvenilirlik eğrisi."],
             ].map(([t, d], i) => (

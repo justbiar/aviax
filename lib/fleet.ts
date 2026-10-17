@@ -1,6 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { Hex } from "viem";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { runAgent, type AgentEvent, type Plan } from "./agent";
+import { agentUrl, fundAvax, fundUsdc, giveFeedback, hasChain, mandateHash, registerAgent, txUrl, usdcBalance } from "./chain";
+import { CYCLE_PRICE_USDC, payAndFetch } from "./x402";
 import { cancelAlgo, getAlgoOrder, getOrder, getTicker, hasOkxKeys, placeOrder } from "./okx";
 
 /**
@@ -34,10 +38,44 @@ export type Trade = {
   reason?: "tp" | "sl" | "manual" | "timeout" | "external";
 };
 
+export type Mandate = {
+  /** base symbols the agent may buy; empty = any liquid pair */
+  allowed: string[];
+  maxTradeUsdt: number;
+  maxDailyTrades: number;
+  /** pause the agent when equity falls this % below the budget */
+  maxDrawdownPct: number;
+  /** minimum ensemble p(EV>0) to execute */
+  minGate: number;
+};
+
+export type ChainLog = { at: number; kind: "fund" | "register" | "x402" | "reputation" | "error" | "info"; text: string; tx?: string };
+
+export type ChainState = {
+  enabled: boolean;
+  status: "off" | "launching" | "registered" | "failed";
+  wallet: Hex;
+  agentId: string | null;
+  mandateHash: Hex | null;
+  paidUsdc: number;
+  payments: number;
+  feedbacks: number;
+  log: ChainLog[];
+  error: string | null;
+};
+
 export type FleetAgent = {
   id: string;
   name: string;
   model: string;
+  /** second-opinion model in the LAYA seat */
+  validator: string;
+  /** bring-your-own OpenRouter key (never sent to the client) */
+  openrouterKey?: string;
+  mandate: Mandate;
+  /** agent wallet private key on Fuji testnet (never sent to the client) */
+  walletPk: Hex;
+  chain: ChainState;
   /** "paper": live prices, simulated fills. "okx": real orders on the OKX demo account. */
   execution: "paper" | "okx";
   budget: number;
@@ -61,7 +99,7 @@ export type FleetAgent = {
   events: AgentEvent[];
 };
 
-export type NewAgent = Pick<FleetAgent, "name" | "model" | "execution" | "budget" | "intervalSec" | "maxLeverage" | "universe" | "maxHoldMin">;
+export type NewAgent = Pick<FleetAgent, "name" | "model" | "validator" | "openrouterKey" | "mandate" | "execution" | "budget" | "intervalSec" | "maxLeverage" | "universe" | "maxHoldMin"> & { launchOnFuji: boolean };
 
 type Store = { agents: Map<string, FleetAgent>; busy: Set<string>; timer?: NodeJS.Timeout; loaded: boolean };
 const g = globalThis as typeof globalThis & { __fleet?: Store };
@@ -74,10 +112,21 @@ function load() {
   store.loaded = true;
   try {
     const raw = JSON.parse(fs.readFileSync(FILE, "utf8")) as FleetAgent[];
-    for (const a of raw) store.agents.set(a.id, { ...a, execution: a.execution ?? "okx", events: [], runId: 0, phase: a.position ? "in_position" : "idle", upl: 0 });
+    for (const a of raw) store.agents.set(a.id, migrate({ ...a, events: [], runId: 0, phase: a.position ? "in_position" : "idle", upl: 0 }));
   } catch {
     /* first start */
   }
+}
+
+/** Fills fields added in later versions so older agents (file or memory) keep working. */
+function migrate(a: FleetAgent): FleetAgent {
+  a.execution ??= "okx";
+  a.validator ??= "ollama:laya";
+  a.mandate ??= { allowed: [], maxTradeUsdt: a.budget, maxDailyTrades: 20, maxDrawdownPct: 20, minGate: 0.55 };
+  a.walletPk ??= generatePrivateKey();
+  a.chain ??= { enabled: false, status: "off", wallet: privateKeyToAccount(a.walletPk).address, agentId: null, mandateHash: null, paidUsdc: 0, payments: 0, feedbacks: 0, log: [], error: null };
+  a.events ??= [];
+  return a;
 }
 
 function save() {
@@ -88,6 +137,7 @@ function save() {
 
 export function ensureFleet() {
   load();
+  for (const a of store.agents.values()) migrate(a);
   if (!store.timer) store.timer = setInterval(() => tick().catch(() => null), 5000);
 }
 
@@ -97,8 +147,8 @@ const available = (a: FleetAgent) => Math.max(0, a.budget + a.realizedPnl);
 export function listAgents() {
   ensureFleet();
   return [...store.agents.values()].map((a) => {
-    const { events, ...rest } = a;
-    return { ...rest, equity: equity(a), busy: store.busy.has(a.id), eventCount: events.length };
+    const { events, walletPk: _pk, openrouterKey: _k, ...rest } = a;
+    return { ...rest, hasOwnKey: Boolean(_k), equity: equity(a), busy: store.busy.has(a.id), eventCount: events.length, tradesToday: tradesToday(a) };
   });
 }
 
@@ -108,13 +158,27 @@ export function getEvents(id: string, since: number) {
   return { runId: a.runId, events: a.events.slice(since), total: a.events.length };
 }
 
+const tradesToday = (a: FleetAgent) => {
+  const day = new Date().toDateString();
+  return [...a.trades, ...(a.position ? [a.position] : [])].filter((t) => new Date(t.openedAt).toDateString() === day).length;
+};
+
+function chainLog(a: FleetAgent, kind: ChainLog["kind"], text: string, tx?: string) {
+  a.chain.log = [{ at: Date.now(), kind, text, tx }, ...a.chain.log].slice(0, 60);
+}
+
 export function createAgent(input: NewAgent) {
   ensureFleet();
   const id = Math.random().toString(36).slice(2, 8);
+  const { launchOnFuji, ...cfg } = input;
+  const walletPk = generatePrivateKey();
+  const launch = launchOnFuji && hasChain();
   const a: FleetAgent = {
-    ...input,
+    ...cfg,
+    walletPk,
+    chain: { enabled: launch, status: launch ? "launching" : "off", wallet: privateKeyToAccount(walletPk).address, agentId: null, mandateHash: mandateHash({ ...cfg.mandate, budget: cfg.budget, model: cfg.model, validator: cfg.validator }), paidUsdc: 0, payments: 0, feedbacks: 0, log: [], error: null },
     id,
-    status: "running",
+    status: launch ? "paused" : "running",
     createdAt: Date.now(),
     phase: "idle",
     position: null,
@@ -130,13 +194,75 @@ export function createAgent(input: NewAgent) {
   };
   store.agents.set(id, a);
   save();
-  tick().catch(() => null);
+  if (launch) void launchOnChain(a);
+  else tick().catch(() => null);
   return a;
 }
 
-export async function agentAction(id: string, action: "start" | "pause" | "close" | "delete" | "run") {
+/**
+ * Launch on Avalanche Fuji: fund the agent wallet, register its ERC-8004 identity
+ * from its own wallet (model + mandate hash in metadata), top it up with USDC for x402.
+ * The agent starts trading only after the identity exists.
+ */
+async function launchOnChain(a: FleetAgent) {
+  const c = a.chain;
+  try {
+    chainLog(a, "info", `Ajan cüzdanı oluşturuldu: ${c.wallet}`);
+    const fundTx = await fundAvax(c.wallet, process.env.FUJI_AGENT_GAS_AVAX || "0.02");
+    chainLog(a, "fund", "Platform → ajan cüzdanı 0.02 AVAX (gas)", txUrl(fundTx));
+    save();
+
+    const card = {
+      type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+      name: `Aviax · ${a.name}`,
+      description: "Prediction-native spot trading agent. Decisions come from decision models as probability distributions.",
+      services: [{ name: "aviax-decision-cycle", endpoint: "/api/x402/cycle", payment: { protocol: "x402", network: "avalanche-fuji", asset: "USDC", price: CYCLE_PRICE_USDC } }],
+      model: a.model,
+      validator: a.validator,
+      mandate: { ...a.mandate, budgetUsdt: a.budget },
+      mandateHash: c.mandateHash,
+      supportedTrust: ["reputation"],
+    };
+    const reg = await registerAgent(a.walletPk, card, { model: a.model, validator: a.validator, mandateHash: c.mandateHash ?? "" });
+    c.agentId = reg.agentId;
+    chainLog(a, "register", `ERC-8004 kimliği alındı: agentId #${reg.agentId} (yetki hash'i metadata'da)`, txUrl(reg.hash));
+    save();
+
+    const topUp = Number(process.env.FUJI_AGENT_USDC || 0.2);
+    try {
+      const usdcTx = await fundUsdc(c.wallet, topUp);
+      chainLog(a, "fund", `Platform → ajan ${topUp} USDC (x402 ödemeleri için)`, txUrl(usdcTx));
+    } catch (e) {
+      chainLog(a, "error", `USDC gönderilemedi: ${(e as Error).message.slice(0, 120)}. x402 ödemeleri için platform cüzdanına Fuji USDC lazım.`);
+    }
+    c.status = "registered";
+    a.status = "running";
+    a.nextRunAt = Date.now();
+    save();
+    tick().catch(() => null);
+  } catch (e) {
+    const msg = (e as Error).message;
+    c.status = "failed";
+    c.error = /insufficient funds|exceeds balance/i.test(msg) ? "Platform cüzdanında yeterli Fuji AVAX yok. Faucet'ten AVAX gönderip tekrar dene." : msg.slice(0, 200);
+    chainLog(a, "error", `Fuji fırlatma başarısız: ${c.error}`);
+    save();
+  }
+}
+
+export async function retryLaunch(id: string) {
+  const a = store.agents.get(id);
+  if (!a || a.chain.status === "registered") return;
+  a.chain.status = "launching";
+  a.chain.error = null;
+  save();
+  void launchOnChain(a);
+}
+
+export async function agentAction(id: string, action: "start" | "pause" | "close" | "delete" | "run" | "launch") {
   const a = store.agents.get(id);
   if (!a) throw new Error("agent not found");
+  if (action === "launch") return retryLaunch(id);
+  if ((action === "start" || action === "run") && a.chain.enabled && a.chain.status !== "registered") throw new Error("Ajan önce Fuji'de kaydedilmeli");
   if (action === "start") {
     a.status = "running";
     a.nextRunAt = Date.now();
@@ -178,6 +304,18 @@ async function tick() {
       a.lastError = "Bütçe tükendi";
       a.status = "paused";
       save();
+      continue;
+    }
+    // Mandate: drawdown stop and daily trade cap.
+    if (equity(a) <= a.budget * (1 - a.mandate.maxDrawdownPct / 100)) {
+      a.lastError = `Maks. zarar limiti (%${a.mandate.maxDrawdownPct}) aşıldı, ajan durduruldu.`;
+      a.status = "paused";
+      save();
+      continue;
+    }
+    if (tradesToday(a) >= a.mandate.maxDailyTrades) {
+      a.lastVerdict = "limit";
+      a.nextRunAt = Date.now() + a.intervalSec * 1000;
       continue;
     }
     void cycle(a);
@@ -242,6 +380,20 @@ async function trackPosition(a: FleetAgent) {
   t.closedAt = Date.now();
   a.realizedPnl += pnl;
   a.trades = [t, ...a.trades].slice(0, 50);
+  if (a.chain.status === "registered" && a.chain.agentId) {
+    const pnlPct = (pnl / (t.entry * qty)) * 100;
+    const agentId = a.chain.agentId;
+    giveFeedback(agentId, pnlPct, t.instId, { instId: t.instId, entry: t.entry, exit, qty: t.qty, pnl, reason, openedAt: t.openedAt, closedAt: t.closedAt })
+      .then((h) => {
+        a.chain.feedbacks += 1;
+        chainLog(a, "reputation", `ERC-8004 itibar: ${t.instId} ${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}% (${reason})`, txUrl(h));
+        save();
+      })
+      .catch((e) => {
+        chainLog(a, "error", `İtibar kaydı başarısız: ${(e as Error).message.slice(0, 120)}`);
+        save();
+      });
+  }
   a.position = null;
   a.upl = 0;
   a.phase = "cooldown";
@@ -257,6 +409,36 @@ async function cycle(a: FleetAgent) {
   a.events = [];
   a.lastError = null;
   const held = [...store.agents.values()].filter((x) => x.id !== a.id && x.position).map((x) => x.position!.instId);
+
+  // x402: the agent pays for its decision cycle before it may run.
+  if (a.chain.status === "registered") {
+    const t0 = Date.now();
+    a.events.push(Object.assign({ type: "log", tone: "info", tool: "x402", text: `Karar turu ücreti: ${CYCLE_PRICE_USDC} USDC · 402 → EIP-3009 imza → Fuji settle` } as AgentEvent, { ts: t0 }));
+    try {
+      const port = process.env.PORT || "3000";
+      const { res, paid } = await payAndFetch(`http://localhost:${port}/api/x402/cycle?agent=${a.id}`, a.walletPk);
+      if (!res.ok || !paid) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error((j as { error?: string }).error || `HTTP ${res.status}`);
+      }
+      a.chain.payments += 1;
+      a.chain.paidUsdc += paid.amount ?? CYCLE_PRICE_USDC;
+      chainLog(a, "x402", `x402 ödeme ${CYCLE_PRICE_USDC} USDC (tur ${a.runs})`, txUrl(paid.transaction));
+      a.events.push(Object.assign({ type: "log", tone: "ok", tool: "x402", text: `Ödeme settle edildi (${((Date.now() - t0) / 1000).toFixed(1)}s): ${paid.transaction.slice(0, 18)}…` } as AgentEvent, { ts: Date.now() }));
+    } catch (e) {
+      const bal = await usdcBalance(a.chain.wallet).catch(() => 0);
+      const msg = bal < CYCLE_PRICE_USDC ? `Ajan cüzdanında USDC yok (${bal}). x402 ödemesi yapılamadı, tur atlandı.` : `x402 ödemesi başarısız: ${(e as Error).message.slice(0, 140)}`;
+      a.lastError = msg;
+      a.lastVerdict = "error";
+      chainLog(a, "error", msg);
+      a.events.push(Object.assign({ type: "log", tone: "err", text: msg } as AgentEvent, { ts: Date.now() }), Object.assign({ type: "done", ms: 0, verdict: "error" } as AgentEvent, { ts: Date.now() }));
+      a.phase = "error";
+      a.nextRunAt = Date.now() + a.intervalSec * 1000;
+      store.busy.delete(a.id);
+      save();
+      return;
+    }
+  }
   let plan: Plan | null = null;
   let ordId: string | undefined;
   let fill: { algoId?: string; qty?: string; avgPx?: number } = {};
@@ -266,6 +448,11 @@ async function cycle(a: FleetAgent) {
       execute: true,
       universe: a.universe,
       model: a.model,
+      validator: a.validator,
+      openrouterKey: a.openrouterKey,
+      allowed: a.mandate.allowed,
+      maxTradeUsdt: a.mandate.maxTradeUsdt,
+      minGate: a.mandate.minGate,
       budget: available(a),
       maxLeverage: a.maxLeverage,
       exclude: held,
