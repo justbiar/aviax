@@ -82,7 +82,7 @@ export default function AgentPage() {
             <span>model çağrısı <b className="text-ink">{s.modelCalls}</b></span>
             <span>ort. gecikme <b className="text-ink">{avgMs ? `${avgMs.toFixed(0)}ms` : "-"}</b></span>
             <span>run süresi <b className="text-ink">{s.totalMs ? `${(s.totalMs / 1000).toFixed(2)}s` : "-"}</b></span>
-            <span>JEV kaynağı <b className="text-ink">{s.providers ? (s.providers.jev === "openrouter" ? s.jevModel : s.providers.jev) : "-"}</b></span>
+            <span>JEV kaynağı <b className="text-ink">{s.providers ? (s.providers.jev === "shadow" ? "shadow" : s.jevModel) : "-"}</b></span>
           </div>
         </div>
       </section>
@@ -119,7 +119,7 @@ export default function AgentPage() {
             <div className="rounded-card border border-white/10 bg-black/40 p-2">
               <div className="flex items-center justify-between px-3 pt-2">
                 <h2 className="font-display text-xl tracking-wide">{current ? `${current.name} · olasılık alanı` : "Olasılık alanı"}</h2>
-                <span className="font-mono text-[10px] text-white/40">{s.providers ? `JEV ${s.providers.jev === "openrouter" ? s.jevModel : s.providers.jev} · LAYA ${s.providers.laya}` : "hazır"}</span>
+                <span className="font-mono text-[10px] text-white/40">{s.providers ? `JEV ${s.providers.jev === "shadow" ? "shadow" : s.jevModel} · LAYA ${s.providers.laya === "endpoint" ? "laya (yerel)" : s.providers.laya}` : "hazır"}</span>
               </div>
               <div className="aspect-square w-full">
                 <DecisionField s={s} />

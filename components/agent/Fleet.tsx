@@ -219,7 +219,7 @@ export function AgentCard({ a, selected, onSelect }: { a: FleetAgentView; select
         <span>{a.trades.length} işlem · {wins} kâr</span>
       </div>
 
-      <div className="mt-3 min-h-[52px] rounded-btn bg-ink/[0.04] px-3 py-2 font-mono text-xs">
+      <div className="mt-3 min-h-[52px] break-words rounded-btn bg-ink/[0.04] px-3 py-2 font-mono text-xs [overflow-wrap:anywhere]">
         {a.position ? (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
             <b className="text-long">AL {short(a.position.instId)}</b>

@@ -31,8 +31,8 @@ export function Nav() {
     ? [
         { k: "OKX", v: s.okx ? (s.demo ? "Demo hesap bağlı" : "Canlı hesap") : "Anahtar yok", ok: s.okx },
         { k: "Agent Trade Kit", v: "MCP sunucusu", ok: true },
-        { k: "JEV", v: s.jev ? (s.jevProvider === "openrouter" ? "OpenRouter" : s.jevProvider ?? "Bağlı") : "Simülasyon", ok: s.jev },
-        { k: "LAYA", v: s.laya ? "Bağlı" : "Simülasyon", ok: s.laya },
+        { k: "JEV", v: s.jev ? (s.jevProvider === "openrouter" ? "OpenRouter" : s.jevProvider === "endpoint" ? "Yerel · Ollama" : "TypeSafe") : "Simülasyon", ok: s.jev },
+        { k: "LAYA", v: s.laya ? "Yerel · Ollama" : "Simülasyon", ok: s.laya },
         { k: "Anlatıcı LLM", v: s.llm ? "OpenRouter" : "Kapalı", ok: s.llm },
       ]
     : [];

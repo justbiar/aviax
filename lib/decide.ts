@@ -111,7 +111,8 @@ export async function decide(model: ModelName, state: string, questions: Record<
         method: "POST",
         signal: AbortSignal.timeout(Number(process.env.DECISION_TIMEOUT_MS || 40000)),
         headers: { "Content-Type": "application/json", ...(c.key ? { Authorization: `Bearer ${c.key}` } : {}) },
-        body: JSON.stringify({ model: c.modelId, state, questions: wire }),
+        // keep_alive keeps local Ollama models resident between agent cycles.
+        body: JSON.stringify({ model: c.modelId, state, questions: wire, ...(prov === "endpoint" ? { keep_alive: "30m" } : {}) }),
         cache: "no-store",
       });
       const json = await res.json();

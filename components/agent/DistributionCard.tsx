@@ -54,7 +54,11 @@ export function DistributionCard({ d, index }: { d: DecisionEv; index: number })
       <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-2 font-mono text-[10px]">
         <span className="text-sun">JEV {d.jevMs}ms</span>
         <span className="truncate px-2 text-white/35" title={d.jevSrc}>
-          {d.jevProvider === "typesafe" ? "1 forward pass · 0 token" : d.jevProvider === "openrouter" ? d.jevSrc.replace("openrouter:", "") : "shadow estimator"}
+          {d.jevProvider === "typesafe" || d.jevProvider === "endpoint"
+            ? `${d.jevProvider === "endpoint" ? `yerel ${d.jevSrc}` : "JEV"} · 1 forward pass · 0 token`
+            : d.jevProvider === "openrouter"
+              ? d.jevSrc.replace("openrouter:", "")
+              : "shadow estimator"}
         </span>
         <span className="text-[rgb(64,214,196)]">LAYA {d.layaMs}ms</span>
       </div>
