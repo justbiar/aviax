@@ -1,5 +1,5 @@
 import { atkCall, atkData } from "./atk";
-import { decide, isLive, openrouterModel, provider, type Answer, type DecisionResult, type ModelName, type Provider, type Question } from "./decide";
+import { decide as decideRaw, isLive, resolveSpec, type Answer, type DecisionResult, type ModelName, type ModelSpec, type Provider, type Question } from "./decide";
 import { computeFeatures, describe, parseCandles, type Features } from "./features";
 import { hasOkxKeys, notionalToContracts, roundToTick } from "./okx";
 import { hasOpenRouter, narrate } from "./openrouter";
@@ -53,16 +53,40 @@ function blend(a: Answer, b: Answer, wa = 0.6) {
 }
 const top = (p: Record<string, number>) => Object.entries(p).sort((x, y) => y[1] - x[1])[0];
 
-export async function* runAgent(opts: { execute: boolean; universe?: number }): AsyncGenerator<AgentEvent> {
+export type RunOpts = {
+  execute: boolean;
+  universe?: number;
+  /** JEV model for this agent, e.g. "openrouter:liquid/lfm-2.5-2.6b:free" or "ollama:strands-decider". */
+  model?: ModelSpec;
+  /** Margin capital the agent may commit (USDT). Defaults to env max notional. */
+  budget?: number;
+  maxLeverage?: number;
+  /** Instruments held by other agents; never traded here. */
+  exclude?: string[];
+  /** Fleet mode: abort the cycle instead of falling back to shadow when JEV is unreachable. */
+  strict?: boolean;
+  /** clOrdId prefix so fills can be attributed to an agent. */
+  tag?: string;
+};
+
+export async function* runAgent(opts: RunOpts): AsyncGenerator<AgentEvent> {
   const t0 = Date.now();
   const execute = opts.execute && hasOkxKeys();
-  const jevProv = provider("jev");
+  const decide = async (m: ModelName, state: string, qs: Record<string, Question>) => {
+    const r = await decideRaw(m, state, qs, m === "jev" ? opts.model : undefined);
+    if (opts.strict && m === "jev" && r.error) throw new Error(`JEV modeli cevap vermedi (${r.error.slice(0, 120)}). Bu tur atlandı.`);
+    return r;
+  };
+  const provider = (m: ModelName) => resolveSpec(m, m === "jev" ? opts.model : undefined).prov;
+  const maxLev = Math.min(opts.maxLeverage ?? MAX_LEV(), MAX_LEV());
+  const jevSpec = resolveSpec("jev", opts.model);
+  const jevProv = jevSpec.prov;
   yield {
     type: "hello",
     at: t0,
     live: { jev: isLive("jev"), laya: isLive("laya"), okx: hasOkxKeys(), llm: hasOpenRouter() },
     providers: { jev: jevProv, laya: provider("laya") },
-    jevModel: jevProv === "openrouter" ? openrouterModel("jev") : jevProv,
+    jevModel: jevProv === "shadow" ? "shadow" : jevSpec.modelId,
     execute,
   };
   if (opts.execute && !hasOkxKeys()) yield { type: "log", tone: "warn", text: "OKX anahtarı yok: plan modu, emir gönderilmeyecek." };
@@ -74,7 +98,7 @@ export async function* runAgent(opts: { execute: boolean; universe?: number }): 
   const tickers = atkData<T>(await atkCall("market_get_tickers", { instType: "SWAP" }));
   const n = opts.universe ?? 6;
   const liquid = tickers
-    .filter((t) => t.instId.endsWith("-USDT-SWAP") && CRYPTO.has(t.instId.split("-")[0]))
+    .filter((t) => t.instId.endsWith("-USDT-SWAP") && CRYPTO.has(t.instId.split("-")[0]) && !opts.exclude?.includes(t.instId))
     .map((t) => ({ ...t, qv: Number(t.volCcy24h) * Number(t.last) }))
     .sort((a, b) => b.qv - a.qv);
   // AVAX always competes: the agent is built for the Avalanche ecosystem.
@@ -197,8 +221,10 @@ export async function* runAgent(opts: { execute: boolean; universe?: number }): 
   const [sj, sl] = await Promise.all([decide("jev", state, sizeQ), decide("laya", state, sizeQ)]);
   const sizeScore = 0.6 * (sj.answers.size.score ?? 1) + 0.4 * (sl.answers.size.score ?? 1);
   const levScore = 0.6 * (sj.answers.leverage.score ?? 0) + 0.4 * (sl.answers.leverage.score ?? 0);
-  const notional = Math.round(MAX_NOTIONAL() * (0.15 + 0.85 * (sizeScore / 4)));
-  const leverage = Math.min(MAX_LEV(), [1, 2, 3, 5][Math.round(levScore)]);
+  const leverage = Math.min(maxLev, [1, 2, 3, 5][Math.round(levScore)]);
+  const sizeFrac = 0.15 + 0.75 * (sizeScore / 4); // share of the budget committed as margin
+  // With a budget, the model sizes margin inside it; notional = margin x leverage.
+  const notional = opts.budget ? Math.max(5, Math.floor(opts.budget * sizeFrac * leverage)) : Math.round(MAX_NOTIONAL() * (0.15 + 0.85 * (sizeScore / 4)));
   yield { type: "decision", key: "size", title: "Pozisyon boyutu", jev: sj.answers.size, laya: sl.answers.size, jevMs: sj.latencyMs, jevSrc: sj.modelId, jevProvider: sj.provider, layaMs: sl.latencyMs, pick: `${notional} USDT` };
   yield { type: "decision", key: "leverage", title: "Kaldıraç", jev: sj.answers.leverage, laya: sl.answers.leverage, jevMs: sj.latencyMs, jevSrc: sj.modelId, jevProvider: sj.provider, layaMs: sl.latencyMs, pick: `${leverage}x` };
   yield { type: "stage", stage: "size", status: "done" };
@@ -291,8 +317,10 @@ export async function* runAgent(opts: { execute: boolean; universe?: number }): 
       tpOrdPx: "-1",
       slTriggerPx: String(slPx),
       slOrdPx: "-1",
-      clOrdId: `aviax${Date.now()}`.slice(0, 32),
+      clOrdId: `${opts.tag ?? "aviax"}${Date.now()}`.replace(/[^a-zA-Z0-9]/g, "").slice(0, 32),
     });
+    const rErr = r as { error?: boolean; code?: string; message?: string };
+    if (rErr?.error) throw new Error(rErr.code === "50124" ? "OKX API anahtarında işlem (Trade) yetkisi yok. Demo API anahtarını Trade izniyle yeniden oluştur." : `OKX ${rErr.code}: ${rErr.message}`);
     const ord = atkData<{ ordId: string; sCode: string; sMsg: string }>(r)[0];
     if (!ord || (ord.sCode && ord.sCode !== "0")) throw new Error(ord?.sMsg || JSON.stringify(r).slice(0, 200));
     yield { type: "order", ok: true, detail: `${side.toUpperCase()} ${x.instId} · ${contracts} ct`, ordId: ord.ordId };

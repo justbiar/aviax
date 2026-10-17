@@ -1,7 +1,9 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePoll } from "@/lib/usePoll";
+import { AgentCard, AgentForm, type FleetAgentView } from "@/components/agent/Fleet";
 import { useAgent } from "@/components/agent/useAgent";
 import { DecisionField } from "@/components/agent/DecisionField";
 import { PipelineRail } from "@/components/agent/PipelineRail";
@@ -16,10 +18,19 @@ const EASE = [0.22, 1, 0.36, 1] as const;
 const ORDER = ["direction", "size", "leverage", "tp", "sl", "gate"] as const;
 
 export default function AgentPage() {
-  const { s, run } = useAgent();
-  const [execute, setExecute] = useState(false);
-  const [pace, setPace] = useState(1);
-  const [universe, setUniverse] = useState(6);
+  const { s, run, follow } = useAgent();
+  const [selected, setSelected] = useState<string | null>(null);
+  const { data: fleet, reload } = usePoll<FleetAgentView[]>("/api/fleet", 3000);
+  const agents = fleet ?? [];
+  const current = agents.find((a) => a.id === selected);
+
+  // Auto-follow the first agent when the page opens.
+  useEffect(() => {
+    if (!selected && agents.length && !s.running && !s.logs.length) {
+      setSelected(agents[0].id);
+      follow(agents[0].id);
+    }
+  }, [agents, selected, s.running, s.logs.length, follow]);
 
   const overlays: Overlay[] = useMemo(
     () =>
@@ -55,38 +66,15 @@ export default function AgentPage() {
             Parite, yön, boyut, TP ve SL. Her karar JEV ve LAYA&apos;dan gelen bir olasılık dağılımı. Metin yok, tahmin var.
           </motion.p>
 
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: EASE, delay: 0.35 }} className="mx-auto mt-8 max-w-[720px] rounded-card border border-ink/50 bg-paper p-3 text-left shadow-card">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex rounded-btn bg-ink/5 p-1" role="radiogroup" aria-label="Mod">
-                {[
-                  { v: false, l: "Plan" },
-                  { v: true, l: "OKX demo'da işle" },
-                ].map((o) => (
-                  <button key={o.l} role="radio" aria-checked={execute === o.v} onClick={() => setExecute(o.v)} className={`min-h-[40px] rounded-[8px] px-3 text-sm font-bold transition-all ${execute === o.v ? "bg-paper shadow-btn" : "text-ink/50"}`}>
-                    {o.l}
-                  </button>
-                ))}
-              </div>
-              <label className="flex items-center gap-2 rounded-btn bg-ink/5 px-3 py-2 text-sm font-bold">
-                Evren
-                <select value={universe} onChange={(e) => setUniverse(Number(e.target.value))} className="bg-transparent font-mono outline-none">
-                  {[4, 6, 8].map((v) => <option key={v} value={v}>{v}</option>)}
-                </select>
-              </label>
-              <label className="flex items-center gap-2 rounded-btn bg-ink/5 px-3 py-2 text-sm font-bold">
-                Tempo
-                <select value={pace} onChange={(e) => setPace(Number(e.target.value))} className="bg-transparent font-mono outline-none">
-                  <option value={1.6}>sunum</option>
-                  <option value={1}>normal</option>
-                  <option value={0}>gerçek zaman</option>
-                </select>
-              </label>
+          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, ease: EASE, delay: 0.35 }} className="mx-auto mt-8 max-w-[860px]">
+            <AgentForm onCreated={(id) => { setSelected(id); follow(id); reload(); }} />
+            <div className="mt-3 text-center">
               <button
-                onClick={() => run({ execute, universe, pace })}
+                onClick={() => { setSelected(null); follow(null); run({ execute: false, universe: 6, pace: 1 }); }}
                 disabled={s.running}
-                className="ml-auto min-h-[44px] rounded-btn border border-ink/10 bg-sun px-5 font-bold shadow-btn transition-transform hover:-translate-y-px active:translate-y-0 disabled:opacity-60"
+                className="text-sm font-semibold text-muted underline-offset-4 hover:text-ink hover:underline disabled:opacity-50"
               >
-                {s.running ? "Agent çalışıyor..." : "Agent'ı başlat →"}
+                Emirsiz deneme turu izle
               </button>
             </div>
           </motion.div>
@@ -99,6 +87,27 @@ export default function AgentPage() {
         </div>
       </section>
 
+      {/* FLEET */}
+      {agents.length > 0 && (
+        <section className="border-b border-ink/10 bg-paper">
+          <div className="mx-auto max-w-[1440px] px-4 py-8 sm:px-6">
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+              <h2 className="font-display text-3xl uppercase tracking-wide">Ajan filosu</h2>
+              <span className="font-mono text-xs text-muted">
+                toplam bakiye <b className="text-ink">{agents.reduce((t, a) => t + a.equity, 0).toFixed(2)} USDT</b> · {agents.filter((a) => a.position).length} açık pozisyon
+              </span>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <AnimatePresence>
+                {agents.map((a) => (
+                  <AgentCard key={a.id} a={a} selected={a.id === selected} onSelect={() => { setSelected(a.id); follow(a.id); }} />
+                ))}
+              </AnimatePresence>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* STAGE */}
       <section className="stage bg-stage text-white">
         <div className="mx-auto max-w-[1440px] space-y-4 px-3 py-6 sm:px-6 sm:py-8">
@@ -109,7 +118,7 @@ export default function AgentPage() {
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)_340px]">
             <div className="rounded-card border border-white/10 bg-black/40 p-2">
               <div className="flex items-center justify-between px-3 pt-2">
-                <h2 className="font-display text-xl tracking-wide">Olasılık alanı</h2>
+                <h2 className="font-display text-xl tracking-wide">{current ? `${current.name} · olasılık alanı` : "Olasılık alanı"}</h2>
                 <span className="font-mono text-[10px] text-white/40">{s.providers ? `JEV ${s.providers.jev === "openrouter" ? s.jevModel : s.providers.jev} · LAYA ${s.providers.laya}` : "hazır"}</span>
               </div>
               <div className="aspect-square w-full">

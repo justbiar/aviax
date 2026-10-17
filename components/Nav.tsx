@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Status = { okx: boolean; demo: boolean; jev: boolean; jevProvider?: string; laya: boolean; llm: boolean };
 
@@ -15,9 +15,28 @@ const LINKS = [
 export function Nav() {
   const path = usePathname();
   const [s, setS] = useState<Status | null>(null);
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     fetch("/api/status").then((r) => r.json()).then(setS).catch(() => null);
   }, []);
+  useEffect(() => {
+    const close = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+
+  const rows = s
+    ? [
+        { k: "OKX", v: s.okx ? (s.demo ? "Demo hesap bağlı" : "Canlı hesap") : "Anahtar yok", ok: s.okx },
+        { k: "Agent Trade Kit", v: "MCP sunucusu", ok: true },
+        { k: "JEV", v: s.jev ? (s.jevProvider === "openrouter" ? "OpenRouter" : s.jevProvider ?? "Bağlı") : "Simülasyon", ok: s.jev },
+        { k: "LAYA", v: s.laya ? "Bağlı" : "Simülasyon", ok: s.laya },
+        { k: "Anlatıcı LLM", v: s.llm ? "OpenRouter" : "Kapalı", ok: s.llm },
+      ]
+    : [];
+  const healthy = s?.okx;
 
   return (
     <header className="sticky top-0 z-40 border-b border-ink/10 bg-paper/85 backdrop-blur">
@@ -29,38 +48,32 @@ export function Nav() {
           {LINKS.map((l) => {
             const active = path?.startsWith(l.href);
             return (
-              <Link
-                key={l.href}
-                href={l.href}
-                className={`min-h-[40px] rounded-btn px-3 py-2 text-sm font-bold transition-colors duration-150 ${active ? "bg-ink text-paper" : "text-ink/70 hover:bg-ink/5 hover:text-ink"}`}
-              >
+              <Link key={l.href} href={l.href} className={`min-h-[40px] rounded-btn px-3 py-2 text-sm font-bold transition-colors duration-150 ${active ? "bg-ink text-paper" : "text-ink/70 hover:bg-ink/5 hover:text-ink"}`}>
                 {l.label}
               </Link>
             );
           })}
         </nav>
-        <div className="ml-auto hidden items-center gap-1.5 md:flex">
-          {s && (
-            <>
-              <Pill on={s.okx} label={s.demo ? "OKX demo" : "OKX live"} />
-              <Pill on={true} label="ATK" />
-              <Pill on={s.jev} label={s.jevProvider === "openrouter" ? "JEV · OpenRouter" : "JEV"} warn="shadow" />
-              <Pill on={s.laya} label="LAYA" warn="shadow" />
-              <Pill on={s.llm} label="LLM" />
-            </>
+        <div ref={box} className="relative ml-auto">
+          <button onClick={() => setOpen((o) => !o)} aria-expanded={open} className="flex min-h-[40px] items-center gap-2 rounded-btn px-3 text-sm font-semibold text-ink/70 transition-colors hover:bg-ink/5 hover:text-ink">
+            <span className={`h-2 w-2 rounded-full ${s ? (healthy ? "bg-long" : "bg-short") : "bg-ink/20"}`} />
+            <span className="hidden sm:inline">{s?.demo === false ? "Canlı" : "Demo"}</span>
+          </button>
+          {open && s && (
+            <div className="absolute right-0 top-12 w-64 rounded-card border border-ink/15 bg-paper p-2 shadow-card">
+              {rows.map((r) => (
+                <div key={r.k} className="flex items-center justify-between rounded-[8px] px-2 py-2 text-sm">
+                  <span className="font-semibold">{r.k}</span>
+                  <span className="flex items-center gap-1.5 text-muted">
+                    {r.v}
+                    <span className={`h-1.5 w-1.5 rounded-full ${r.ok ? "bg-long" : "bg-ink/25"}`} />
+                  </span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>
     </header>
-  );
-}
-
-function Pill({ on, label, warn }: { on: boolean; label: string; warn?: string }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-paper px-2.5 py-1 font-mono text-[11px] font-medium">
-      <span className={`h-1.5 w-1.5 rounded-full ${on ? "bg-long" : warn ? "bg-sun" : "bg-ink/25"}`} />
-      {label}
-      {!on && warn && <span className="text-muted">{warn}</span>}
-    </span>
   );
 }

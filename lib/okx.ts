@@ -156,3 +156,10 @@ export const roundToTick = async (instId: string, px: number) => {
   const decimals = (inst.tickSz.split(".")[1] ?? "").length;
   return (Math.round(px / tick) * tick).toFixed(decimals);
 };
+
+export const getPositionsHistory = (instId: string) =>
+  request<{ instId: string; realizedPnl: string; pnl: string; fee: string; openAvgPx: string; closeAvgPx: string; uTime: string; cTime: string; direction: string }[]>(
+    "GET",
+    "/api/v5/account/positions-history",
+    { auth: true, query: { instType: "SWAP", instId, limit: 10 } },
+  );

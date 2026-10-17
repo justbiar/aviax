@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentEvent, Plan, Stage } from "@/lib/agent";
 import type { Features } from "@/lib/features";
 import type { DecisionResult } from "@/lib/decide";
@@ -169,5 +169,64 @@ export function useAgent() {
     [apply],
   );
 
-  return { s, run };
+  /** Follow a fleet agent: poll its event stream and replay each run on the stage. */
+  const [followId, setFollowId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!followId) return;
+    abortRef.current?.abort();
+    let alive = true;
+    let runId = -1;
+    let seq = 0;
+    const queue: AgentEvent[] = [];
+    let draining = false;
+    const drain = async () => {
+      if (draining) return;
+      draining = true;
+      while (alive && queue.length) {
+        const ev = queue.shift()!;
+        apply(ev);
+        // Catch up quickly when far behind, otherwise give the eye time per decision.
+        const behind = queue.length > 25;
+        const w = behind ? 0 : ev.type === "decision" ? 700 : ev.type === "worker" ? 180 : ev.type === "universe" ? 350 : 40;
+        if (w) await sleep(w);
+      }
+      draining = false;
+    };
+    const poll = async () => {
+      while (alive) {
+        try {
+          const r = await fetch(`/api/fleet/${followId}/events?since=${seq}`, { cache: "no-store" });
+          const j = await r.json();
+          if (j.runId !== undefined) {
+            if (j.runId !== runId) {
+              // New run started (or first attach): reset and replay from the beginning.
+              if (seq !== 0 || runId !== -1) {
+                runId = j.runId;
+                seq = 0;
+                queue.length = 0;
+                setS({ ...initial(), running: true, startedAt: Date.now() });
+                continue;
+              }
+              runId = j.runId;
+              setS({ ...initial(), running: j.total > 0, startedAt: Date.now() });
+            }
+            if (j.events?.length) {
+              queue.push(...j.events);
+              seq += j.events.length;
+              drain();
+            }
+          }
+        } catch {
+          /* keep polling */
+        }
+        await sleep(1000);
+      }
+    };
+    poll();
+    return () => {
+      alive = false;
+    };
+  }, [followId, apply]);
+
+  return { s, run, followId, follow: setFollowId };
 }
